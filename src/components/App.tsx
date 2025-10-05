@@ -3,7 +3,7 @@ import { ImageInput } from './ImageInput';
 import { Controls } from './Controls';
 import { ColorLayers } from './ColorLayers';
 import { Preview } from './Preview';
-import { quantizeColors, RGB } from '../utils/colorQuantization';
+import { quantizeColors, RGB, detectCornerColor } from '../utils/colorQuantization';
 import { generate3MF, ModelConfig } from '../utils/3mfGenerator';
 
 export function App() {
@@ -15,11 +15,20 @@ export function App() {
   const [showOnFront, setShowOnFront] = useState(true);
   const [colorHeights, setColorHeights] = useState<number[]>([]);
   const [error, setError] = useState<string>('');
+  const [useSmoothing, setUseSmoothing] = useState(true);
+  const [outlineMode, setOutlineMode] = useState(false);
+  const [transparencyKeyColor, setTransparencyKeyColor] = useState<RGB | null>(null);
 
   const handleImageLoad = (data: ImageData, url: string) => {
     setImageData(data);
     setImageUrl(url);
     setError('');
+    
+    // Auto-detect transparency key color from corners
+    const cornerColor = detectCornerColor(data);
+    if (cornerColor) {
+      setTransparencyKeyColor(cornerColor);
+    }
   };
 
   const handleError = (message: string) => {
@@ -61,7 +70,10 @@ export function App() {
         colorHeights,
         colors,
         imageData,
-        showOnFront
+        showOnFront,
+        useSmoothing,
+        transparencyKeyColor,
+        outlineMode
       };
 
       const blob = await generate3MF(config);
@@ -104,6 +116,12 @@ export function App() {
             onWidthChange={setWidth}
             showOnFront={showOnFront}
             onShowOnFrontChange={setShowOnFront}
+            useSmoothing={useSmoothing}
+            onUseSmoothingChange={setUseSmoothing}
+            outlineMode={outlineMode}
+            onOutlineModeChange={setOutlineMode}
+            transparencyKeyColor={transparencyKeyColor}
+            onTransparencyKeyColorChange={setTransparencyKeyColor}
           />
 
           {colors.length > 0 && (

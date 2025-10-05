@@ -129,3 +129,59 @@ export function rgbToHex(color: RGB): string {
     .map(x => x.toString(16).padStart(2, '0'))
     .join('');
 }
+
+export function detectCornerColor(imageData: ImageData): RGB | null {
+  const width = imageData.width;
+  const height = imageData.height;
+  
+  // Sample the four corners
+  const corners: RGB[] = [];
+  const positions = [
+    { x: 0, y: 0 }, // top-left
+    { x: width - 1, y: 0 }, // top-right
+    { x: 0, y: height - 1 }, // bottom-left
+    { x: width - 1, y: height - 1 } // bottom-right
+  ];
+  
+  for (const pos of positions) {
+    const i = (pos.y * width + pos.x) * 4;
+    corners.push({
+      r: imageData.data[i],
+      g: imageData.data[i + 1],
+      b: imageData.data[i + 2]
+    });
+  }
+  
+  // Find the most common corner color
+  const colorCounts = new Map<string, { color: RGB; count: number }>();
+  
+  for (const corner of corners) {
+    const key = `${corner.r},${corner.g},${corner.b}`;
+    const existing = colorCounts.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      colorCounts.set(key, { color: corner, count: 1 });
+    }
+  }
+  
+  // Return the color that appears most frequently in corners
+  let maxCount = 0;
+  let mostCommonColor: RGB | null = null;
+  
+  for (const { color, count } of colorCounts.values()) {
+    if (count > maxCount) {
+      maxCount = count;
+      mostCommonColor = color;
+    }
+  }
+  
+  // Only return if at least 2 corners match
+  return maxCount >= 2 ? mostCommonColor : null;
+}
+
+export function colorsMatch(c1: RGB, c2: RGB, tolerance: number = 10): boolean {
+  return Math.abs(c1.r - c2.r) <= tolerance &&
+         Math.abs(c1.g - c2.g) <= tolerance &&
+         Math.abs(c1.b - c2.b) <= tolerance;
+}
