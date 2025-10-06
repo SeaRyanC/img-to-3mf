@@ -133,6 +133,20 @@ function generate3DModel(config: ModelConfig): string {
     const baseZ = 0;  // All layers start at Z=0
     const topZ = layerHeight;  // Only the height varies
     
+    // Create vertex map for manifold geometry (vertex sharing)
+    const vertexMap = new Map<string, number>();
+    const getOrCreateVertex = (x: number, y: number, z: number): number => {
+      // Round to 6 decimal places to handle floating point precision
+      const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
+      if (vertexMap.has(key)) {
+        return vertexMap.get(key)!;
+      }
+      const index = localVertices.length;
+      localVertices.push({ x, y, z });
+      vertexMap.set(key, index);
+      return index;
+    };
+    
     // Use improved merging algorithm with connected components
     const mergedRegions = mergeAdjacentVoxels(colorMap, colorIndex, imgWidth, imgHeight);
     
@@ -147,11 +161,11 @@ function generate3DModel(config: ModelConfig): string {
       const pyNext = (region.y2 / imgHeight) * depth + offsetY;
       
       if (shouldSmooth) {
-        // Apply chamfering/beveling to smooth corners
-        addSmoothedVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
+        // Apply chamfering/beveling to smooth corners with manifold geometry
+        addSmoothedVoxelManifold(getOrCreateVertex, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
       } else {
-        // Create a box for this merged region
-        addVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
+        // Create a manifold box for this merged region
+        addVoxelManifold(getOrCreateVertex, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
       }
     }
     
@@ -163,16 +177,18 @@ function generate3DModel(config: ModelConfig): string {
   
   // Generate XML with separate objects for each color
   // Using proper basematerials structure for Bambu Studio compatibility
+  // CRITICAL: colorspace="sRGB" is REQUIRED by Bambu Studio to recognize colors
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <resources>
-    <basematerials id="1">`;
+    <basematerials id="1" colorspace="sRGB">`;
   
   // Add materials for each color with proper displaycolor format
+  // Use simple numeric names as Bambu Studio expects
   colors.forEach((color, i) => {
     const colorStr = rgbToColorString(color);
     xml += `
-      <base name="Color_${i + 1}" displaycolor="${colorStr}" />`;
+      <base name="${i + 1}" displaycolor="${colorStr}" />`;
   });
   
   xml += `
@@ -393,8 +409,10 @@ function findLargestRectangleFrom(
   return bestRect;
 }
 
-function addVoxel(
-  vertices: Vertex[],
+// Add a voxel with proper vertex sharing for manifold geometry
+// Uses a vertex getter function instead of direct vertex array access
+function addVoxelManifold(
+  getOrCreateVertex: (x: number, y: number, z: number) => number,
   triangles: Triangle[],
   x1: number,
   y1: number,
@@ -405,53 +423,50 @@ function addVoxel(
   colorIndex: number,
   showOnFront: boolean
 ): void {
-  const baseIndex = vertices.length;
-  
   // Adjust Y coordinates based on showOnFront
   const yFront = showOnFront ? y1 : y2;
   const yBack = showOnFront ? y2 : y1;
   
-  // 8 vertices of the box
-  vertices.push(
-    { x: x1, y: yFront, z: z1 }, // 0
-    { x: x2, y: yFront, z: z1 }, // 1
-    { x: x2, y: yBack, z: z1 },  // 2
-    { x: x1, y: yBack, z: z1 },  // 3
-    { x: x1, y: yFront, z: z2 }, // 4
-    { x: x2, y: yFront, z: z2 }, // 5
-    { x: x2, y: yBack, z: z2 },  // 6
-    { x: x1, y: yBack, z: z2 }   // 7
-  );
+  // Get or create the 8 vertices of the box (shared with adjacent boxes)
+  const v0 = getOrCreateVertex(x1, yFront, z1); // 0
+  const v1 = getOrCreateVertex(x2, yFront, z1); // 1
+  const v2 = getOrCreateVertex(x2, yBack, z1);  // 2
+  const v3 = getOrCreateVertex(x1, yBack, z1);  // 3
+  const v4 = getOrCreateVertex(x1, yFront, z2); // 4
+  const v5 = getOrCreateVertex(x2, yFront, z2); // 5
+  const v6 = getOrCreateVertex(x2, yBack, z2);  // 6
+  const v7 = getOrCreateVertex(x1, yBack, z2);  // 7
   
   // 12 triangles (2 per face, 6 faces)
+  // Consistent winding order for manifold mesh
   const faces = [
-    // Front face
-    [0, 1, 5], [0, 5, 4],
-    // Back face
-    [2, 3, 7], [2, 7, 6],
-    // Left face
-    [3, 0, 4], [3, 4, 7],
-    // Right face
-    [1, 2, 6], [1, 6, 5],
-    // Top face
-    [4, 5, 6], [4, 6, 7],
-    // Bottom face
-    [3, 2, 1], [3, 1, 0]
+    // Front face (Y = yFront)
+    [v0, v1, v5], [v0, v5, v4],
+    // Back face (Y = yBack)
+    [v2, v3, v7], [v2, v7, v6],
+    // Left face (X = x1)
+    [v3, v0, v4], [v3, v4, v7],
+    // Right face (X = x2)
+    [v1, v2, v6], [v1, v6, v5],
+    // Top face (Z = z2)
+    [v4, v5, v6], [v4, v6, v7],
+    // Bottom face (Z = z1)
+    [v3, v2, v1], [v3, v1, v0]
   ];
   
   faces.forEach(face => {
     triangles.push({
-      v1: baseIndex + face[0],
-      v2: baseIndex + face[1],
-      v3: baseIndex + face[2],
+      v1: face[0],
+      v2: face[1],
+      v3: face[2],
       colorIndex
     });
   });
 }
 
-// Add a smoothed voxel with chamfered/beveled edges (simplified marching cubes approach)
-function addSmoothedVoxel(
-  vertices: Vertex[],
+// Add a smoothed voxel with beveled edges using manifold geometry
+function addSmoothedVoxelManifold(
+  getOrCreateVertex: (x: number, y: number, z: number) => number,
   triangles: Triangle[],
   x1: number,
   y1: number,
@@ -463,10 +478,7 @@ function addSmoothedVoxel(
   showOnFront: boolean
 ): void {
   // For smoothing, we'll add chamfers to the corners
-  // This creates a more organic shape than sharp voxels
   const bevelSize = Math.min((x2 - x1), (y2 - y1)) * 0.15; // 15% bevel
-  
-  const baseIndex = vertices.length;
   
   // Adjust Y coordinates based on showOnFront
   const yFront = showOnFront ? y1 : y2;
@@ -474,50 +486,48 @@ function addSmoothedVoxel(
   
   // Create 16 vertices for a beveled box (8 main + 8 beveled corners on XY plane)
   // Bottom layer (z1)
-  vertices.push(
-    { x: x1 + bevelSize, y: yFront, z: z1 },         // 0
-    { x: x2 - bevelSize, y: yFront, z: z1 },         // 1
-    { x: x2, y: yFront + bevelSize, z: z1 },         // 2
-    { x: x2, y: yBack - bevelSize, z: z1 },          // 3
-    { x: x2 - bevelSize, y: yBack, z: z1 },          // 4
-    { x: x1 + bevelSize, y: yBack, z: z1 },          // 5
-    { x: x1, y: yBack - bevelSize, z: z1 },          // 6
-    { x: x1, y: yFront + bevelSize, z: z1 },         // 7
-    // Top layer (z2)
-    { x: x1 + bevelSize, y: yFront, z: z2 },         // 8
-    { x: x2 - bevelSize, y: yFront, z: z2 },         // 9
-    { x: x2, y: yFront + bevelSize, z: z2 },         // 10
-    { x: x2, y: yBack - bevelSize, z: z2 },          // 11
-    { x: x2 - bevelSize, y: yBack, z: z2 },          // 12
-    { x: x1 + bevelSize, y: yBack, z: z2 },          // 13
-    { x: x1, y: yBack - bevelSize, z: z2 },          // 14
-    { x: x1, y: yFront + bevelSize, z: z2 }          // 15
-  );
+  const v0 = getOrCreateVertex(x1 + bevelSize, yFront, z1);          // 0
+  const v1 = getOrCreateVertex(x2 - bevelSize, yFront, z1);          // 1
+  const v2 = getOrCreateVertex(x2, yFront + bevelSize, z1);          // 2
+  const v3 = getOrCreateVertex(x2, yBack - bevelSize, z1);           // 3
+  const v4 = getOrCreateVertex(x2 - bevelSize, yBack, z1);           // 4
+  const v5 = getOrCreateVertex(x1 + bevelSize, yBack, z1);           // 5
+  const v6 = getOrCreateVertex(x1, yBack - bevelSize, z1);           // 6
+  const v7 = getOrCreateVertex(x1, yFront + bevelSize, z1);          // 7
+  // Top layer (z2)
+  const v8 = getOrCreateVertex(x1 + bevelSize, yFront, z2);          // 8
+  const v9 = getOrCreateVertex(x2 - bevelSize, yFront, z2);          // 9
+  const v10 = getOrCreateVertex(x2, yFront + bevelSize, z2);         // 10
+  const v11 = getOrCreateVertex(x2, yBack - bevelSize, z2);          // 11
+  const v12 = getOrCreateVertex(x2 - bevelSize, yBack, z2);          // 12
+  const v13 = getOrCreateVertex(x1 + bevelSize, yBack, z2);          // 13
+  const v14 = getOrCreateVertex(x1, yBack - bevelSize, z2);          // 14
+  const v15 = getOrCreateVertex(x1, yFront + bevelSize, z2);         // 15
   
   // Triangles for beveled box - more complex topology
   const faces = [
     // Bottom face (octagon)
-    [0, 1, 2], [0, 2, 7], [2, 3, 7], [3, 6, 7],
-    [3, 4, 6], [4, 5, 6], [5, 6, 0], [5, 0, 1], [1, 4, 2], [2, 4, 3],
+    [v0, v1, v2], [v0, v2, v7], [v2, v3, v7], [v3, v6, v7],
+    [v3, v4, v6], [v4, v5, v6], [v5, v6, v0], [v5, v0, v1], [v1, v4, v2], [v2, v4, v3],
     // Top face (octagon)
-    [8, 10, 9], [8, 15, 10], [10, 15, 11], [11, 15, 14],
-    [11, 14, 12], [12, 14, 13], [13, 14, 8], [13, 8, 9], [9, 10, 12], [10, 11, 12],
+    [v8, v10, v9], [v8, v15, v10], [v10, v15, v11], [v11, v15, v14],
+    [v11, v14, v12], [v12, v14, v13], [v13, v14, v8], [v13, v8, v9], [v9, v10, v12], [v10, v11, v12],
     // Side faces connecting bottom to top
-    [0, 8, 9], [0, 9, 1],
-    [1, 9, 10], [1, 10, 2],
-    [2, 10, 11], [2, 11, 3],
-    [3, 11, 12], [3, 12, 4],
-    [4, 12, 13], [4, 13, 5],
-    [5, 13, 14], [5, 14, 6],
-    [6, 14, 15], [6, 15, 7],
-    [7, 15, 8], [7, 8, 0]
+    [v0, v8, v9], [v0, v9, v1],
+    [v1, v9, v10], [v1, v10, v2],
+    [v2, v10, v11], [v2, v11, v3],
+    [v3, v11, v12], [v3, v12, v4],
+    [v4, v12, v13], [v4, v13, v5],
+    [v5, v13, v14], [v5, v14, v6],
+    [v6, v14, v15], [v6, v15, v7],
+    [v7, v15, v8], [v7, v8, v0]
   ];
   
   faces.forEach(face => {
     triangles.push({
-      v1: baseIndex + face[0],
-      v2: baseIndex + face[1],
-      v3: baseIndex + face[2],
+      v1: face[0],
+      v2: face[1],
+      v3: face[2],
       colorIndex
     });
   });
