@@ -15,7 +15,7 @@ export function App() {
   const [showOnFront, setShowOnFront] = useState(true);
   const [colorHeights, setColorHeights] = useState<number[]>([]);
   const [error, setError] = useState<string>('');
-  const [useSmoothing, setUseSmoothing] = useState(true);
+  const [useSmoothing, setUseSmoothing] = useState(false);
   const [outlineMode, setOutlineMode] = useState(false);
   const [transparencyKeyColor, setTransparencyKeyColor] = useState<RGB | null>(null);
 

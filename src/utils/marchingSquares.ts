@@ -3,34 +3,26 @@ export interface Contour {
   colorIndex: number;
 }
 
-// Marching squares lookup table for edge cases
-// Each entry is an array of edge pairs [entry, exit]
-const EDGE_TABLE: Array<Array<[number, number]>> = [
-  [], // 0: no edges
-  [[0, 1], [1, 3]], // 1: bottom-left corner
-  [[1, 0], [0, 2]], // 2: bottom-right corner
-  [[1, 3], [0, 2]], // 3: bottom edge
-  [[2, 3], [3, 1]], // 4: top-right corner
-  [[0, 1], [1, 3], [2, 3], [3, 1]], // 5: saddle (ambiguous)
-  [[1, 0], [0, 2], [2, 3], [3, 1]], // 6: right edge
-  [[0, 2], [2, 3]], // 7: bottom-right and top-right
-  [[3, 2], [2, 0]], // 8: top-left corner
-  [[0, 1], [1, 3], [3, 2], [2, 0]], // 9: left edge
-  [[1, 0], [0, 2], [3, 2], [2, 0]], // 10: saddle (ambiguous)
-  [[1, 3], [3, 2]], // 11: bottom-left and top-left
-  [[2, 3], [3, 1], [1, 0]], // 12: top edge
-  [[0, 1], [2, 3], [3, 1]], // 13: top-left and bottom-left
-  [[1, 0], [2, 3]], // 14: top-right and bottom-right
-  [] // 15: all corners (no edges)
-];
-
-// Edge positions: [bottom, right, top, left]
-// 0 = bottom, 1 = right, 2 = top, 3 = left
-const EDGE_OFFSETS: Array<[number, number]> = [
-  [0.5, 0], // bottom edge midpoint
-  [1, 0.5], // right edge midpoint
-  [0.5, 1], // top edge midpoint
-  [0, 0.5]  // left edge midpoint
+// Marching squares implementation
+// For each configuration (0-15), defines which edges have segments
+// Edges: 0=bottom, 1=right, 2=top, 3=left
+const EDGE_LOOKUP: number[][] = [
+  [],           // 0: ....
+  [3, 0],       // 1: ...X
+  [0, 1],       // 2: ..X.
+  [3, 1],       // 3: ..XX
+  [1, 2],       // 4: .X..
+  [3, 0, 1, 2], // 5: .X.X (saddle - we'll handle as two separate contours)
+  [0, 2],       // 6: .XX.
+  [3, 2],       // 7: .XXX
+  [2, 3],       // 8: X...
+  [2, 0],       // 9: X..X
+  [0, 1, 2, 3], // 10: X.X. (saddle - we'll handle as two separate contours)
+  [2, 1],       // 11: X.XX
+  [1, 3],       // 12: XX..
+  [1, 0],       // 13: XX.X
+  [0, 3],       // 14: XXX.
+  []            // 15: XXXX
 ];
 
 export function marchingSquares(
@@ -42,19 +34,26 @@ export function marchingSquares(
   const contours: Contour[] = [];
   const visited = new Set<string>();
   
-  // For each cell in the grid
+  // For each cell in the grid, check if it has edges and trace them
   for (let y = 0; y < height - 1; y++) {
     for (let x = 0; x < width - 1; x++) {
-      const cellKey = `${x},${y}`;
-      if (visited.has(cellKey)) continue;
-      
       const config = getCellConfiguration(colorMap, x, y, colorIndex);
-      if (config === 0 || config === 15) continue; // No edges
+      if (config === 0 || config === 15) continue;
       
-      // Trace contour from this cell
-      const contour = traceContour(colorMap, colorIndex, x, y, visited, width, height);
-      if (contour.points.length > 2) {
-        contours.push(contour);
+      const edges = EDGE_LOOKUP[config];
+      if (edges.length === 0) continue;
+      
+      // For each edge pair, try to trace a contour if not visited
+      for (let i = 0; i < edges.length; i += 2) {
+        if (i + 1 >= edges.length) break;
+        
+        const startKey = `${x},${y},${edges[i]}`;
+        if (visited.has(startKey)) continue;
+        
+        const contour = traceContour(colorMap, colorIndex, x, y, edges[i], visited, width, height);
+        if (contour.points.length > 2) {
+          contours.push(contour);
+        }
       }
     }
   }
@@ -71,6 +70,7 @@ function getCellConfiguration(
   let config = 0;
   
   // Check four corners: bottom-left, bottom-right, top-right, top-left
+  // Bit pattern: 8 4 2 1 => TL TR BR BL
   if (y < colorMap.length && x < colorMap[y].length && colorMap[y][x] === colorIndex) config |= 1;
   if (y < colorMap.length && x + 1 < colorMap[y].length && colorMap[y][x + 1] === colorIndex) config |= 2;
   if (y + 1 < colorMap.length && x + 1 < colorMap[y + 1].length && colorMap[y + 1][x + 1] === colorIndex) config |= 4;
@@ -79,11 +79,35 @@ function getCellConfiguration(
   return config;
 }
 
+function getEdgePoint(x: number, y: number, edge: number): { x: number; y: number } {
+  // Returns the midpoint of an edge
+  // Edges: 0=bottom, 1=right, 2=top, 3=left
+  switch (edge) {
+    case 0: return { x: x + 0.5, y: y };       // bottom
+    case 1: return { x: x + 1, y: y + 0.5 };   // right
+    case 2: return { x: x + 0.5, y: y + 1 };   // top
+    case 3: return { x: x, y: y + 0.5 };       // left
+    default: return { x: x + 0.5, y: y + 0.5 };
+  }
+}
+
+function getNextCell(x: number, y: number, edge: number): { x: number; y: number; edge: number } {
+  // Given an edge, returns the next cell and the edge we're entering from
+  switch (edge) {
+    case 0: return { x, y: y - 1, edge: 2 };   // bottom -> move down, enter from top
+    case 1: return { x: x + 1, y, edge: 3 };   // right -> move right, enter from left
+    case 2: return { x, y: y + 1, edge: 0 };   // top -> move up, enter from bottom
+    case 3: return { x: x - 1, y, edge: 1 };   // left -> move left, enter from right
+    default: return { x, y, edge: 0 };
+  }
+}
+
 function traceContour(
   colorMap: number[][],
   colorIndex: number,
   startX: number,
   startY: number,
+  startEdge: number,
   visited: Set<string>,
   width: number,
   height: number
@@ -91,49 +115,60 @@ function traceContour(
   const points: Array<{ x: number; y: number }> = [];
   let x = startX;
   let y = startY;
-  let prevEdge = -1;
+  let currentEdge = startEdge;
   
-  const maxSteps = width * height * 4; // Safety limit
+  const maxSteps = width * height * 4;
   let steps = 0;
   
   do {
-    const cellKey = `${x},${y}`;
-    visited.add(cellKey);
+    // Mark this edge as visited
+    visited.add(`${x},${y},${currentEdge}`);
     
+    // Add the edge midpoint
+    points.push(getEdgePoint(x, y, currentEdge));
+    
+    // Get the cell configuration
     const config = getCellConfiguration(colorMap, x, y, colorIndex);
-    const edges = EDGE_TABLE[config];
+    const edges = EDGE_LOOKUP[config];
     
     if (edges.length === 0) break;
     
-    // Find the edge to follow (not the one we came from)
-    let edgeIndex = 0;
-    if (edges.length > 2) {
-      // For saddle cases, choose based on previous edge
-      edgeIndex = prevEdge === edges[0][1] ? 2 : 0;
-    } else if (prevEdge !== -1 && edges[0] && edges[0][0] === prevEdge) {
-      edgeIndex = edges.length > 1 ? 1 : 0;
+    // Find the exit edge (the edge that's not the entry edge)
+    let exitEdge = -1;
+    for (let i = 0; i < edges.length; i++) {
+      if (edges[i] !== currentEdge && edges[i] !== ((currentEdge + 2) % 4)) {
+        // Check if this edge pairs with our current edge
+        const pairIndex = edges.indexOf(currentEdge);
+        if (pairIndex !== -1) {
+          // Find the paired exit edge
+          if (pairIndex % 2 === 0 && i === pairIndex + 1) {
+            exitEdge = edges[i];
+            break;
+          } else if (pairIndex % 2 === 1 && i === pairIndex - 1) {
+            exitEdge = edges[i];
+            break;
+          }
+        }
+      }
     }
     
-    if (!edges[edgeIndex]) break;
-    
-    const [exitEdge, _] = edges[edgeIndex];
-    
-    // Add point at edge midpoint
-    const offset = EDGE_OFFSETS[exitEdge];
-    points.push({
-      x: x + offset[0],
-      y: y + offset[1]
-    });
-    
-    // Move to next cell
-    prevEdge = (exitEdge + 2) % 4; // Opposite edge
-    
-    switch (exitEdge) {
-      case 0: y--; break; // bottom -> move down
-      case 1: x++; break; // right -> move right
-      case 2: y++; break; // top -> move up
-      case 3: x--; break; // left -> move left
+    if (exitEdge === -1) {
+      // Try to find any valid exit edge that's not the entry
+      for (const edge of edges) {
+        if (edge !== currentEdge) {
+          exitEdge = edge;
+          break;
+        }
+      }
     }
+    
+    if (exitEdge === -1) break;
+    
+    // Move to the next cell
+    const next = getNextCell(x, y, exitEdge);
+    x = next.x;
+    y = next.y;
+    currentEdge = next.edge;
     
     // Check bounds
     if (x < 0 || x >= width - 1 || y < 0 || y >= height - 1) break;
@@ -141,7 +176,7 @@ function traceContour(
     steps++;
     if (steps > maxSteps) break;
     
-  } while (x !== startX || y !== startY);
+  } while (x !== startX || y !== startY || currentEdge !== startEdge);
   
   return { points, colorIndex };
 }
