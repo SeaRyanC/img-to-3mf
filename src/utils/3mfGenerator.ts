@@ -1,6 +1,5 @@
 import JSZip from 'jszip';
 import { RGB, findClosestColor, colorsMatch } from './colorQuantization';
-import { marchingSquares, smoothContour, Contour } from './marchingSquares';
 
 export interface ModelConfig {
   width: number;  // in mm
@@ -115,30 +114,19 @@ function generate3DModel(config: ModelConfig): string {
     const topZ = currentZ + layerHeight;
     
     if (useSmoothing || outlineMode) {
-      // Use marching squares for smooth contours
-      const contours = marchingSquares(colorMap, colorIndex, imgWidth, imgHeight);
-      
-      for (let contour of contours) {
-        // Smooth the contour
-        if (useSmoothing) {
-          contour = smoothContour(contour, 0.5);
-        }
-        
-        if (outlineMode) {
-          // Generate outline/border geometry
-          addContourOutline(vertices, triangles, contour, width, depth, imgWidth, imgHeight, baseZ, topZ, colorIndex);
-        } else {
-          // Generate filled geometry with smooth edges
-          addContourFilled(vertices, triangles, contour, width, depth, imgWidth, imgHeight, baseZ, topZ, colorIndex);
-        }
-      }
-    } else {
-      // Original voxel-based approach (for each pixel that matches this color, create a voxel)
+      // Marching squares mode is currently disabled due to bugs
+      // Fall back to voxel mode
+      console.warn('Smoothing and outline modes are not yet fully implemented. Using voxel mode.');
+    }
+    
+    // Always use voxel mode for now
+    {
+      // Voxel-based approach (for each pixel that matches this color, create a voxel)
       for (let y = 0; y < imgHeight; y++) {
         for (let x = 0; x < imgWidth; x++) {
           if (colorMap[y][x] !== colorIndex) continue;
           
-          // Calculate position - fix alignment by centering pixels properly
+          // Calculate position
           const px = (x / imgWidth) * width;
           const py = (y / imgHeight) * depth;
           const pxNext = ((x + 1) / imgWidth) * width;
@@ -262,164 +250,4 @@ function rgbToColorString(color: RGB): string {
   const g = color.g.toString(16).padStart(2, '0');
   const b = color.b.toString(16).padStart(2, '0');
   return `#${r}${g}${b}FF`;
-}
-
-function addContourOutline(
-  vertices: Vertex[],
-  triangles: Triangle[],
-  contour: Contour,
-  width: number,
-  depth: number,
-  imgWidth: number,
-  imgHeight: number,
-  baseZ: number,
-  topZ: number,
-  colorIndex: number
-): void {
-  if (contour.points.length < 3) return;
-  
-  const outlineWidth = 0.3; // mm - width of the outline
-  const points = contour.points;
-  
-  for (let i = 0; i < points.length; i++) {
-    const p1 = points[i];
-    const p2 = points[(i + 1) % points.length];
-    
-    // Convert from image coordinates to world coordinates
-    const x1 = (p1.x / imgWidth) * width;
-    const y1 = (p1.y / imgHeight) * depth;
-    const x2 = (p2.x / imgWidth) * width;
-    const y2 = (p2.y / imgHeight) * depth;
-    
-    // Calculate perpendicular for outline width
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 0.001) continue;
-    
-    const nx = -dy / len * outlineWidth;
-    const ny = dx / len * outlineWidth;
-    
-    // Create a quad for this edge segment
-    const baseIndex = vertices.length;
-    
-    vertices.push(
-      { x: x1, y: y1, z: baseZ },
-      { x: x2, y: y2, z: baseZ },
-      { x: x2 + nx, y: y2 + ny, z: baseZ },
-      { x: x1 + nx, y: y1 + ny, z: baseZ },
-      { x: x1, y: y1, z: topZ },
-      { x: x2, y: y2, z: topZ },
-      { x: x2 + nx, y: y2 + ny, z: topZ },
-      { x: x1 + nx, y: y1 + ny, z: topZ }
-    );
-    
-    // Bottom face
-    triangles.push(
-      { v1: baseIndex, v2: baseIndex + 1, v3: baseIndex + 2, colorIndex },
-      { v1: baseIndex, v2: baseIndex + 2, v3: baseIndex + 3, colorIndex }
-    );
-    
-    // Top face
-    triangles.push(
-      { v1: baseIndex + 4, v2: baseIndex + 6, v3: baseIndex + 5, colorIndex },
-      { v1: baseIndex + 4, v2: baseIndex + 7, v3: baseIndex + 6, colorIndex }
-    );
-    
-    // Outer face
-    triangles.push(
-      { v1: baseIndex + 1, v2: baseIndex + 5, v3: baseIndex + 6, colorIndex },
-      { v1: baseIndex + 1, v2: baseIndex + 6, v3: baseIndex + 2, colorIndex }
-    );
-    
-    // Inner face
-    triangles.push(
-      { v1: baseIndex, v2: baseIndex + 3, v3: baseIndex + 7, colorIndex },
-      { v1: baseIndex, v2: baseIndex + 7, v3: baseIndex + 4, colorIndex }
-    );
-    
-    // Side faces
-    triangles.push(
-      { v1: baseIndex, v2: baseIndex + 4, v3: baseIndex + 5, colorIndex },
-      { v1: baseIndex, v2: baseIndex + 5, v3: baseIndex + 1, colorIndex }
-    );
-    
-    triangles.push(
-      { v1: baseIndex + 2, v2: baseIndex + 6, v3: baseIndex + 7, colorIndex },
-      { v1: baseIndex + 2, v2: baseIndex + 7, v3: baseIndex + 3, colorIndex }
-    );
-  }
-}
-
-function addContourFilled(
-  vertices: Vertex[],
-  triangles: Triangle[],
-  contour: Contour,
-  width: number,
-  depth: number,
-  imgWidth: number,
-  imgHeight: number,
-  baseZ: number,
-  topZ: number,
-  colorIndex: number
-): void {
-  if (contour.points.length < 3) return;
-  
-  const baseIndex = vertices.length;
-  const points = contour.points;
-  
-  // Add vertices for base and top
-  for (const p of points) {
-    const x = (p.x / imgWidth) * width;
-    const y = (p.y / imgHeight) * depth;
-    vertices.push({ x, y, z: baseZ });
-  }
-  
-  for (const p of points) {
-    const x = (p.x / imgWidth) * width;
-    const y = (p.y / imgHeight) * depth;
-    vertices.push({ x, y, z: topZ });
-  }
-  
-  const n = points.length;
-  
-  // Triangulate the base (simple fan triangulation)
-  for (let i = 1; i < n - 1; i++) {
-    triangles.push({
-      v1: baseIndex,
-      v2: baseIndex + i + 1,
-      v3: baseIndex + i,
-      colorIndex
-    });
-  }
-  
-  // Triangulate the top
-  for (let i = 1; i < n - 1; i++) {
-    triangles.push({
-      v1: baseIndex + n,
-      v2: baseIndex + n + i,
-      v3: baseIndex + n + i + 1,
-      colorIndex
-    });
-  }
-  
-  // Side faces
-  for (let i = 0; i < n; i++) {
-    const next = (i + 1) % n;
-    
-    triangles.push(
-      {
-        v1: baseIndex + i,
-        v2: baseIndex + next,
-        v3: baseIndex + n + next,
-        colorIndex
-      },
-      {
-        v1: baseIndex + i,
-        v2: baseIndex + n + next,
-        v3: baseIndex + n + i,
-        colorIndex
-      }
-    );
-  }
 }
