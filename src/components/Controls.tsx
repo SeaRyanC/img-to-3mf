@@ -7,10 +7,6 @@ interface ControlsProps {
   onWidthChange: (width: number) => void;
   showOnFront: boolean;
   onShowOnFrontChange: (showOnFront: boolean) => void;
-  useSmoothing: boolean;
-  onUseSmoothingChange: (useSmoothing: boolean) => void;
-  outlineMode: boolean;
-  onOutlineModeChange: (outlineMode: boolean) => void;
   transparencyKeyColor: RGB | null;
   onTransparencyKeyColorChange: (color: RGB | null) => void;
 }
@@ -22,10 +18,6 @@ export function Controls({
   onWidthChange,
   showOnFront,
   onShowOnFrontChange,
-  useSmoothing,
-  onUseSmoothingChange,
-  outlineMode,
-  onOutlineModeChange,
   transparencyKeyColor,
   onTransparencyKeyColorChange
 }: ControlsProps) {
@@ -79,28 +71,6 @@ export function Controls({
           <option value="front">Front Face</option>
           <option value="back">Back Face</option>
         </select>
-      </div>
-      
-      <div className="control-group checkbox-group">
-        <label>
-          <input
-            type="checkbox"
-            checked={useSmoothing}
-            onChange={(e) => onUseSmoothingChange((e.target as HTMLInputElement).checked)}
-          />
-          <span>Use Smoothing (Marching Squares)</span>
-        </label>
-      </div>
-      
-      <div className="control-group checkbox-group">
-        <label>
-          <input
-            type="checkbox"
-            checked={outlineMode}
-            onChange={(e) => onOutlineModeChange((e.target as HTMLInputElement).checked)}
-          />
-          <span>Outline Mode (Shape on Background)</span>
-        </label>
       </div>
       
       <div className="control-group">

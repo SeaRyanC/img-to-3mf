@@ -8,9 +8,7 @@ export interface ModelConfig {
   colors: RGB[];
   imageData: ImageData;
   showOnFront: boolean;
-  useSmoothing: boolean;
   transparencyKeyColor: RGB | null;
-  outlineMode: boolean; // true = outline only, false = full print
 }
 
 interface Vertex {
@@ -64,7 +62,7 @@ function generateModelRels(): string {
 }
 
 function generate3DModel(config: ModelConfig): string {
-  const { width, colorHeights, colors, imageData, showOnFront, useSmoothing, transparencyKeyColor, outlineMode } = config;
+  const { width, colorHeights, colors, imageData, showOnFront, transparencyKeyColor } = config;
   
   const imgWidth = imageData.width;
   const imgHeight = imageData.height;
@@ -113,28 +111,19 @@ function generate3DModel(config: ModelConfig): string {
     const baseZ = currentZ;
     const topZ = currentZ + layerHeight;
     
-    if (useSmoothing || outlineMode) {
-      // Marching squares mode is currently disabled due to bugs
-      // Fall back to voxel mode
-      console.warn('Smoothing and outline modes are not yet fully implemented. Using voxel mode.');
-    }
-    
-    // Always use voxel mode for now
-    {
-      // Voxel-based approach (for each pixel that matches this color, create a voxel)
-      for (let y = 0; y < imgHeight; y++) {
-        for (let x = 0; x < imgWidth; x++) {
-          if (colorMap[y][x] !== colorIndex) continue;
-          
-          // Calculate position
-          const px = (x / imgWidth) * width;
-          const py = (y / imgHeight) * depth;
-          const pxNext = ((x + 1) / imgWidth) * width;
-          const pyNext = ((y + 1) / imgHeight) * depth;
-          
-          // Create a box for this voxel
-          addVoxel(vertices, triangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
-        }
+    // Voxel-based approach (for each pixel that matches this color, create a voxel)
+    for (let y = 0; y < imgHeight; y++) {
+      for (let x = 0; x < imgWidth; x++) {
+        if (colorMap[y][x] !== colorIndex) continue;
+        
+        // Calculate position
+        const px = (x / imgWidth) * width;
+        const py = (y / imgHeight) * depth;
+        const pxNext = ((x + 1) / imgWidth) * width;
+        const pyNext = ((y + 1) / imgHeight) * depth;
+        
+        // Create a box for this voxel
+        addVoxel(vertices, triangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
       }
     }
     
