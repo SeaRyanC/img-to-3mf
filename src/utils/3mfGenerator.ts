@@ -100,13 +100,12 @@ function generate3DModel(config: ModelConfig): string {
     }
   }
   
-  const vertices: Vertex[] = [];
-  const triangles: Triangle[] = [];
-  
-  // Generate geometry for each color layer
-  // All layers start at Z=0 and only vary in height (they are separate manifolds on the same plane)
+  // Generate geometry for each color as a separate object
+  const objectsData: Array<{colorIndex: number, vertices: Vertex[], triangles: Triangle[]}> = [];
   
   for (let colorIndex = 0; colorIndex < colors.length; colorIndex++) {
+    const localVertices: Vertex[] = [];
+    const localTriangles: Triangle[] = [];
     const layerHeight = colorHeights[colorIndex];
     const baseZ = 0;  // All layers start at Z=0
     const topZ = layerHeight;  // Only the height varies
@@ -123,12 +122,17 @@ function generate3DModel(config: ModelConfig): string {
         const pyNext = ((y + 1) / imgHeight) * depth;
         
         // Create a box for this voxel
-        addVoxel(vertices, triangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
+        addVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
       }
+    }
+    
+    // Only add object if it has geometry
+    if (localVertices.length > 0) {
+      objectsData.push({ colorIndex, vertices: localVertices, triangles: localTriangles });
     }
   }
   
-  // Generate XML
+  // Generate XML with separate objects for each color
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <resources>
@@ -142,34 +146,50 @@ function generate3DModel(config: ModelConfig): string {
   });
   
   xml += `
-    </basematerials>
-    <object id="2" type="model">
+    </basematerials>`;
+  
+  // Add separate object for each color
+  objectsData.forEach((objData, idx) => {
+    const objectId = idx + 2; // Start from 2 (1 is reserved for basematerials)
+    xml += `
+    <object id="${objectId}" type="model" pid="1" p1="${objData.colorIndex}">
       <mesh>
         <vertices>`;
-  
-  // Add vertices
-  vertices.forEach(v => {
-    xml += `
+    
+    // Add vertices for this color
+    objData.vertices.forEach(v => {
+      xml += `
           <vertex x="${v.x.toFixed(3)}" y="${v.y.toFixed(3)}" z="${v.z.toFixed(3)}" />`;
-  });
-  
-  xml += `
+    });
+    
+    xml += `
         </vertices>
         <triangles>`;
-  
-  // Add triangles
-  triangles.forEach(t => {
+    
+    // Add triangles for this color (no per-triangle color needed, object has the color)
+    objData.triangles.forEach(t => {
+      xml += `
+          <triangle v1="${t.v1}" v2="${t.v2}" v3="${t.v3}" />`;
+    });
+    
     xml += `
-          <triangle v1="${t.v1}" v2="${t.v2}" v3="${t.v3}" pid="1" p1="${t.colorIndex}" />`;
+        </triangles>
+      </mesh>
+    </object>`;
   });
   
   xml += `
-        </triangles>
-      </mesh>
-    </object>
   </resources>
-  <build>
-    <item objectid="2" />
+  <build>`;
+  
+  // Add all objects to the build
+  objectsData.forEach((_, idx) => {
+    const objectId = idx + 2;
+    xml += `
+    <item objectid="${objectId}" />`;
+  });
+  
+  xml += `
   </build>
 </model>`;
   
