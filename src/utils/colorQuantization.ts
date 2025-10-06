@@ -5,12 +5,19 @@ export interface RGB {
 }
 
 // Median cut algorithm for color quantization
+// Optimized for large images (e.g., 1200x1200px)
 export function quantizeColors(imageData: ImageData, colorCount: number): RGB[] {
   const pixels: RGB[] = [];
   
-  // Extract unique colors
+  // Extract unique colors with memory-efficient approach for large images
   const colorSet = new Map<string, RGB>();
-  for (let i = 0; i < imageData.data.length; i += 4) {
+  const totalPixels = imageData.width * imageData.height;
+  const isMassiveImage = totalPixels > 500000; // 500k+ pixels
+  
+  // For very large images, sample every nth pixel to reduce memory usage
+  const sampleRate = isMassiveImage ? Math.max(1, Math.floor(Math.sqrt(totalPixels / 100000))) : 1;
+  
+  for (let i = 0; i < imageData.data.length; i += 4 * sampleRate) {
     const r = imageData.data[i];
     const g = imageData.data[i + 1];
     const b = imageData.data[i + 2];
@@ -22,6 +29,11 @@ export function quantizeColors(imageData: ImageData, colorCount: number): RGB[] 
     const key = `${r},${g},${b}`;
     if (!colorSet.has(key)) {
       colorSet.set(key, { r, g, b });
+    }
+    
+    // Limit color set size for massive images to prevent memory issues
+    if (isMassiveImage && colorSet.size > 10000) {
+      break;
     }
   }
   

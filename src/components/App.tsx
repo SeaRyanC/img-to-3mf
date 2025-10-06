@@ -130,6 +130,7 @@ export function App() {
                 colorHeights={colorHeights}
                 width={width}
                 showOnFront={showOnFront}
+                transparencyKeyColor={transparencyKeyColor}
               />
 
               <div className="actions">

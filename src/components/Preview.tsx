@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'preact/hooks';
-import { RGB, findClosestColor } from '../utils/colorQuantization';
+import { RGB, findClosestColor, colorsMatch } from '../utils/colorQuantization';
 
 interface PreviewProps {
   imageData: ImageData;
@@ -7,9 +7,10 @@ interface PreviewProps {
   colorHeights: number[];
   width: number;
   showOnFront: boolean;
+  transparencyKeyColor: RGB | null;
 }
 
-export function Preview({ imageData, colors, colorHeights, width, showOnFront }: PreviewProps) {
+export function Preview({ imageData, colors, colorHeights, width, showOnFront, transparencyKeyColor }: PreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -18,6 +19,24 @@ export function Preview({ imageData, colors, colorHeights, width, showOnFront }:
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Draw the preview with proper scaling
+    const scale = 4; // Scale factor for better visibility
+    canvas.width = imageData.width * scale;
+    canvas.height = imageData.height * scale;
+    
+    // Disable image smoothing for crisp pixels
+    ctx.imageSmoothingEnabled = false;
+    
+    // Draw checkerboard background for transparent areas
+    const checkerSize = 8; // Size of each checker square
+    for (let y = 0; y < canvas.height; y += checkerSize) {
+      for (let x = 0; x < canvas.width; x += checkerSize) {
+        const isEven = (Math.floor(x / checkerSize) + Math.floor(y / checkerSize)) % 2 === 0;
+        ctx.fillStyle = isEven ? '#cccccc' : '#999999';
+        ctx.fillRect(x, y, checkerSize, checkerSize);
+      }
+    }
 
     // Create a preview showing the quantized colors
     const previewData = new ImageData(imageData.width, imageData.height);
@@ -30,11 +49,20 @@ export function Preview({ imageData, colors, colorHeights, width, showOnFront }:
       };
       const alpha = imageData.data[i + 3];
       
-      if (alpha < 128) {
-        previewData.data[i] = 255;
-        previewData.data[i + 1] = 255;
-        previewData.data[i + 2] = 255;
-        previewData.data[i + 3] = 255;
+      // Check transparency
+      let isTransparent = alpha < 128;
+      
+      // Check against transparency key color
+      if (!isTransparent && transparencyKeyColor && colorsMatch(pixel, transparencyKeyColor, 10)) {
+        isTransparent = true;
+      }
+      
+      if (isTransparent) {
+        // Make fully transparent so checkerboard shows through
+        previewData.data[i] = 0;
+        previewData.data[i + 1] = 0;
+        previewData.data[i + 2] = 0;
+        previewData.data[i + 3] = 0;
       } else {
         const closestColorIndex = findClosestColor(pixel, colors);
         const closestColor = colors[closestColorIndex];
@@ -45,14 +73,6 @@ export function Preview({ imageData, colors, colorHeights, width, showOnFront }:
         previewData.data[i + 3] = 255;
       }
     }
-
-    // Draw the preview with proper scaling
-    const scale = 4; // Scale factor for better visibility
-    canvas.width = imageData.width * scale;
-    canvas.height = imageData.height * scale;
-    
-    // Disable image smoothing for crisp pixels
-    ctx.imageSmoothingEnabled = false;
     
     // Create a temporary canvas with the quantized data
     const tempCanvas = document.createElement('canvas');
@@ -63,16 +83,13 @@ export function Preview({ imageData, colors, colorHeights, width, showOnFront }:
     
     tempCtx.putImageData(previewData, 0, 0);
     
-    // Draw scaled up
+    // Draw scaled up on top of checkerboard
     ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
-
-    // No layer offset effect - just show the quantized image clearly
-    // This prevents X/Y position offset confusion in the preview
-  }, [imageData, colors, colorHeights, width, showOnFront]);
+  }, [imageData, colors, colorHeights, width, showOnFront, transparencyKeyColor]);
 
   return (
     <div className="preview-section">
-      <h3>Preview (Quantized Colors with Layer Effect)</h3>
+      <h3>Preview (Quantized Colors)</h3>
       <canvas ref={canvasRef} className="preview-canvas" />
     </div>
   );

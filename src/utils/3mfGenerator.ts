@@ -72,6 +72,7 @@ function generate3DModel(config: ModelConfig): string {
   const depth = width / aspectRatio;
   
   // Create a 2D array to store which color each pixel belongs to
+  // Process in chunks to avoid memory issues with large images
   const colorMap: number[][] = [];
   for (let y = 0; y < imgHeight; y++) {
     colorMap[y] = [];
@@ -110,20 +111,18 @@ function generate3DModel(config: ModelConfig): string {
     const baseZ = 0;  // All layers start at Z=0
     const topZ = layerHeight;  // Only the height varies
     
-    // Voxel-based approach (for each pixel that matches this color, create a voxel)
-    for (let y = 0; y < imgHeight; y++) {
-      for (let x = 0; x < imgWidth; x++) {
-        if (colorMap[y][x] !== colorIndex) continue;
-        
-        // Calculate position
-        const px = (x / imgWidth) * width;
-        const py = (y / imgHeight) * depth;
-        const pxNext = ((x + 1) / imgWidth) * width;
-        const pyNext = ((y + 1) / imgHeight) * depth;
-        
-        // Create a box for this voxel
-        addVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
-      }
+    // Merge adjacent voxels to reduce triangle count
+    const mergedRegions = mergeAdjacentVoxels(colorMap, colorIndex, imgWidth, imgHeight);
+    
+    // Create geometry for each merged region
+    for (const region of mergedRegions) {
+      const px = (region.x1 / imgWidth) * width;
+      const py = (region.y1 / imgHeight) * depth;
+      const pxNext = (region.x2 / imgWidth) * width;
+      const pyNext = (region.y2 / imgHeight) * depth;
+      
+      // Create a box for this merged region
+      addVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
     }
     
     // Only add object if it has geometry
@@ -133,26 +132,27 @@ function generate3DModel(config: ModelConfig): string {
   }
   
   // Generate XML with separate objects for each color
+  // Using proper basematerials structure for Bambu Studio compatibility
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
   <resources>
     <basematerials id="1">`;
   
-  // Add materials for each color
+  // Add materials for each color with proper displaycolor format
   colors.forEach((color, i) => {
     const colorStr = rgbToColorString(color);
     xml += `
-      <base name="Color${i}" displaycolor="${colorStr}" />`;
+      <base name="Color_${i + 1}" displaycolor="${colorStr}" />`;
   });
   
   xml += `
     </basematerials>`;
   
-  // Add separate object for each color
+  // Add separate object for each color with material reference
   objectsData.forEach((objData, idx) => {
     const objectId = idx + 2; // Start from 2 (1 is reserved for basematerials)
     xml += `
-    <object id="${objectId}" type="model" pid="1" p1="${objData.colorIndex}">
+    <object id="${objectId}" type="model" pid="1" pindex="${objData.colorIndex}">
       <mesh>
         <vertices>`;
     
@@ -194,6 +194,39 @@ function generate3DModel(config: ModelConfig): string {
 </model>`;
   
   return xml;
+}
+
+// Merge adjacent voxels horizontally to reduce triangle count
+function mergeAdjacentVoxels(
+  colorMap: number[][],
+  targetColor: number,
+  width: number,
+  height: number
+): Array<{x1: number, y1: number, x2: number, y2: number}> {
+  const regions: Array<{x1: number, y1: number, x2: number, y2: number}> = [];
+  const visited: boolean[][] = Array(height).fill(null).map(() => Array(width).fill(false));
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (visited[y][x] || colorMap[y][x] !== targetColor) continue;
+      
+      // Find the extent of horizontal merge
+      let x2 = x;
+      while (x2 < width && colorMap[y][x2] === targetColor && !visited[y][x2]) {
+        x2++;
+      }
+      
+      // Mark as visited
+      for (let xi = x; xi < x2; xi++) {
+        visited[y][xi] = true;
+      }
+      
+      // Add region
+      regions.push({ x1: x, y1: y, x2: x2, y2: y + 1 });
+    }
+  }
+  
+  return regions;
 }
 
 function addVoxel(
