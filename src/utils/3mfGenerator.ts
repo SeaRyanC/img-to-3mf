@@ -9,6 +9,7 @@ export interface ModelConfig {
   imageData: ImageData;
   showOnFront: boolean;
   transparencyKeyColor: RGB | null;
+  detectOutline: boolean;
 }
 
 interface Vertex {
@@ -62,7 +63,7 @@ function generateModelRels(): string {
 }
 
 function generate3DModel(config: ModelConfig): string {
-  const { width, colorHeights, colors, imageData, showOnFront, transparencyKeyColor } = config;
+  const { width, colorHeights, colors, imageData, showOnFront, transparencyKeyColor, detectOutline } = config;
   
   const imgWidth = imageData.width;
   const imgHeight = imageData.height;
@@ -70,6 +71,15 @@ function generate3DModel(config: ModelConfig): string {
   // Calculate aspect ratio to determine depth
   const aspectRatio = imgWidth / imgHeight;
   const depth = width / aspectRatio;
+  
+  // Detect outline background color and create mask if requested
+  let outlineMask: boolean[][] | null = null;
+  if (detectOutline) {
+    const bgColor = detectUniformBackground(imageData);
+    if (bgColor) {
+      outlineMask = createOutlineMask(imageData, bgColor);
+    }
+  }
   
   // Create a 2D array to store which color each pixel belongs to
   // Process in chunks to avoid memory issues with large images
@@ -93,6 +103,11 @@ function generate3DModel(config: ModelConfig): string {
         isTransparent = true;
       }
       
+      // Check outline mask - pixels marked as background in outline mode
+      if (!isTransparent && outlineMask && outlineMask[y][x]) {
+        isTransparent = true;
+      }
+      
       if (isTransparent) {
         colorMap[y][x] = -1; // Transparent
       } else {
@@ -103,6 +118,12 @@ function generate3DModel(config: ModelConfig): string {
   
   // Generate geometry for each color as a separate object
   const objectsData: Array<{colorIndex: number, vertices: Vertex[], triangles: Triangle[]}> = [];
+  
+  // Center the model at x=125, y=125
+  const centerX = 125;
+  const centerY = 125;
+  const offsetX = centerX - (width / 2);
+  const offsetY = centerY - (depth / 2);
   
   for (let colorIndex = 0; colorIndex < colors.length; colorIndex++) {
     const localVertices: Vertex[] = [];
@@ -116,10 +137,10 @@ function generate3DModel(config: ModelConfig): string {
     
     // Create geometry for each merged region
     for (const region of mergedRegions) {
-      const px = (region.x1 / imgWidth) * width;
-      const py = (region.y1 / imgHeight) * depth;
-      const pxNext = (region.x2 / imgWidth) * width;
-      const pyNext = (region.y2 / imgHeight) * depth;
+      const px = (region.x1 / imgWidth) * width + offsetX;
+      const py = (region.y1 / imgHeight) * depth + offsetY;
+      const pxNext = (region.x2 / imgWidth) * width + offsetX;
+      const pyNext = (region.y2 / imgHeight) * depth + offsetY;
       
       // Create a box for this merged region
       addVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
@@ -290,4 +311,178 @@ function rgbToColorString(color: RGB): string {
   const g = color.g.toString(16).padStart(2, '0');
   const b = color.b.toString(16).padStart(2, '0');
   return `#${r}${g}${b}FF`;
+}
+
+// Detect uniform background color from image perimeter
+function detectUniformBackground(imageData: ImageData): RGB | null {
+  const width = imageData.width;
+  const height = imageData.height;
+  const perimeterColors = new Map<string, number>();
+  
+  // Sample perimeter pixels
+  for (let x = 0; x < width; x++) {
+    // Top edge
+    const topIdx = x * 4;
+    const topColor = {
+      r: imageData.data[topIdx],
+      g: imageData.data[topIdx + 1],
+      b: imageData.data[topIdx + 2]
+    };
+    const topAlpha = imageData.data[topIdx + 3];
+    
+    // Bottom edge
+    const botIdx = ((height - 1) * width + x) * 4;
+    const botColor = {
+      r: imageData.data[botIdx],
+      g: imageData.data[botIdx + 1],
+      b: imageData.data[botIdx + 2]
+    };
+    const botAlpha = imageData.data[botIdx + 3];
+    
+    if (topAlpha >= 128) {
+      const key = `${topColor.r},${topColor.g},${topColor.b}`;
+      perimeterColors.set(key, (perimeterColors.get(key) || 0) + 1);
+    }
+    
+    if (botAlpha >= 128) {
+      const key = `${botColor.r},${botColor.g},${botColor.b}`;
+      perimeterColors.set(key, (perimeterColors.get(key) || 0) + 1);
+    }
+  }
+  
+  for (let y = 1; y < height - 1; y++) {
+    // Left edge
+    const leftIdx = (y * width) * 4;
+    const leftColor = {
+      r: imageData.data[leftIdx],
+      g: imageData.data[leftIdx + 1],
+      b: imageData.data[leftIdx + 2]
+    };
+    const leftAlpha = imageData.data[leftIdx + 3];
+    
+    // Right edge
+    const rightIdx = (y * width + width - 1) * 4;
+    const rightColor = {
+      r: imageData.data[rightIdx],
+      g: imageData.data[rightIdx + 1],
+      b: imageData.data[rightIdx + 2]
+    };
+    const rightAlpha = imageData.data[rightIdx + 3];
+    
+    if (leftAlpha >= 128) {
+      const key = `${leftColor.r},${leftColor.g},${leftColor.b}`;
+      perimeterColors.set(key, (perimeterColors.get(key) || 0) + 1);
+    }
+    
+    if (rightAlpha >= 128) {
+      const key = `${rightColor.r},${rightColor.g},${rightColor.b}`;
+      perimeterColors.set(key, (perimeterColors.get(key) || 0) + 1);
+    }
+  }
+  
+  // Find most common color
+  let maxCount = 0;
+  let dominantColor: RGB | null = null;
+  
+  for (const [key, count] of perimeterColors.entries()) {
+    if (count > maxCount) {
+      maxCount = count;
+      const [r, g, b] = key.split(',').map(Number);
+      dominantColor = { r, g, b };
+    }
+  }
+  
+  // Only return if it's truly dominant (appears in at least 50% of perimeter)
+  const totalPerimeter = (width * 2) + ((height - 2) * 2);
+  if (dominantColor && maxCount > totalPerimeter * 0.5) {
+    return dominantColor;
+  }
+  
+  return null;
+}
+
+// Create mask of background pixels using flood-fill from edges
+function createOutlineMask(imageData: ImageData, bgColor: RGB): boolean[][] {
+  const width = imageData.width;
+  const height = imageData.height;
+  
+  // Initialize mask - true = background (will be transparent)
+  const mask: boolean[][] = Array(height).fill(null).map(() => Array(width).fill(false));
+  const visited: boolean[][] = Array(height).fill(null).map(() => Array(width).fill(false));
+  
+  // Flood-fill from all edge pixels that match background color
+  const queue: Array<{x: number, y: number}> = [];
+  
+  // Add edge pixels matching background to queue
+  for (let x = 0; x < width; x++) {
+    // Top edge
+    addIfMatchesBackground(imageData, 0, x, width, bgColor, queue, visited);
+    // Bottom edge
+    addIfMatchesBackground(imageData, height - 1, x, width, bgColor, queue, visited);
+  }
+  
+  for (let y = 1; y < height - 1; y++) {
+    // Left edge
+    addIfMatchesBackground(imageData, y, 0, width, bgColor, queue, visited);
+    // Right edge
+    addIfMatchesBackground(imageData, y, width - 1, width, bgColor, queue, visited);
+  }
+  
+  // Flood-fill from queue
+  while (queue.length > 0) {
+    const { x, y } = queue.shift()!;
+    mask[y][x] = true;
+    
+    // Check 4-connected neighbors
+    const neighbors = [
+      { x: x - 1, y },
+      { x: x + 1, y },
+      { x, y: y - 1 },
+      { x, y: y + 1 }
+    ];
+    
+    for (const { x: nx, y: ny } of neighbors) {
+      if (nx >= 0 && nx < width && ny >= 0 && ny < height && !visited[ny][nx]) {
+        const i = (ny * width + nx) * 4;
+        const pixel = {
+          r: imageData.data[i],
+          g: imageData.data[i + 1],
+          b: imageData.data[i + 2]
+        };
+        const alpha = imageData.data[i + 3];
+        
+        if (alpha >= 128 && colorsMatch(pixel, bgColor, 10)) {
+          visited[ny][nx] = true;
+          queue.push({ x: nx, y: ny });
+        }
+      }
+    }
+  }
+  
+  return mask;
+}
+
+function addIfMatchesBackground(
+  imageData: ImageData,
+  y: number,
+  x: number,
+  width: number,
+  bgColor: RGB,
+  queue: Array<{x: number, y: number}>,
+  visited: boolean[][]
+): void {
+  if (visited[y][x]) return;
+  
+  const i = (y * width + x) * 4;
+  const pixel = {
+    r: imageData.data[i],
+    g: imageData.data[i + 1],
+    b: imageData.data[i + 2]
+  };
+  const alpha = imageData.data[i + 3];
+  
+  if (alpha >= 128 && colorsMatch(pixel, bgColor, 10)) {
+    visited[y][x] = true;
+    queue.push({ x, y });
+  }
 }

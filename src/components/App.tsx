@@ -16,6 +16,7 @@ export function App() {
   const [colorHeights, setColorHeights] = useState<number[]>([]);
   const [error, setError] = useState<string>('');
   const [transparencyKeyColor, setTransparencyKeyColor] = useState<RGB | null>(null);
+  const [detectOutline, setDetectOutline] = useState(false);
 
   const handleImageLoad = (data: ImageData, url: string) => {
     setImageData(data);
@@ -69,7 +70,8 @@ export function App() {
         colors,
         imageData,
         showOnFront,
-        transparencyKeyColor
+        transparencyKeyColor,
+        detectOutline
       };
 
       const blob = await generate3MF(config);
@@ -114,6 +116,8 @@ export function App() {
             onShowOnFrontChange={setShowOnFront}
             transparencyKeyColor={transparencyKeyColor}
             onTransparencyKeyColorChange={setTransparencyKeyColor}
+            detectOutline={detectOutline}
+            onDetectOutlineChange={setDetectOutline}
           />
 
           {colors.length > 0 && (

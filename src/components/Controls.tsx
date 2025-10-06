@@ -9,6 +9,8 @@ interface ControlsProps {
   onShowOnFrontChange: (showOnFront: boolean) => void;
   transparencyKeyColor: RGB | null;
   onTransparencyKeyColorChange: (color: RGB | null) => void;
+  detectOutline: boolean;
+  onDetectOutlineChange: (detectOutline: boolean) => void;
 }
 
 export function Controls({
@@ -19,7 +21,9 @@ export function Controls({
   showOnFront,
   onShowOnFrontChange,
   transparencyKeyColor,
-  onTransparencyKeyColorChange
+  onTransparencyKeyColorChange,
+  detectOutline,
+  onDetectOutlineChange
 }: ControlsProps) {
   const handleColorPickerChange = (e: Event) => {
     const value = (e.target as HTMLInputElement).value;
@@ -95,6 +99,19 @@ export function Controls({
             </span>
           )}
         </div>
+      </div>
+      
+      <div className="control-group">
+        <label htmlFor="detectOutline">
+          <input
+            id="detectOutline"
+            type="checkbox"
+            checked={detectOutline}
+            onChange={(e) => onDetectOutlineChange((e.target as HTMLInputElement).checked)}
+            style={{ marginRight: '8px' }}
+          />
+          Detect Outline (Treat Uniform Background as Transparent)
+        </label>
       </div>
     </div>
   );
