@@ -485,7 +485,7 @@ function addSmoothedVoxelManifold(
   const yBack = showOnFront ? y2 : y1;
   
   // Create 16 vertices for a beveled box (8 main + 8 beveled corners on XY plane)
-  // Bottom layer (z1)
+  // Bottom layer (z1) - octagon vertices in clockwise order
   const v0 = getOrCreateVertex(x1 + bevelSize, yFront, z1);          // 0
   const v1 = getOrCreateVertex(x2 - bevelSize, yFront, z1);          // 1
   const v2 = getOrCreateVertex(x2, yFront + bevelSize, z1);          // 2
@@ -494,7 +494,7 @@ function addSmoothedVoxelManifold(
   const v5 = getOrCreateVertex(x1 + bevelSize, yBack, z1);           // 5
   const v6 = getOrCreateVertex(x1, yBack - bevelSize, z1);           // 6
   const v7 = getOrCreateVertex(x1, yFront + bevelSize, z1);          // 7
-  // Top layer (z2)
+  // Top layer (z2) - octagon vertices in clockwise order
   const v8 = getOrCreateVertex(x1 + bevelSize, yFront, z2);          // 8
   const v9 = getOrCreateVertex(x2 - bevelSize, yFront, z2);          // 9
   const v10 = getOrCreateVertex(x2, yFront + bevelSize, z2);         // 10
@@ -504,33 +504,60 @@ function addSmoothedVoxelManifold(
   const v14 = getOrCreateVertex(x1, yBack - bevelSize, z2);          // 14
   const v15 = getOrCreateVertex(x1, yFront + bevelSize, z2);         // 15
   
-  // Triangles for beveled box - more complex topology
-  const faces = [
-    // Bottom face (octagon)
-    [v0, v1, v2], [v0, v2, v7], [v2, v3, v7], [v3, v6, v7],
-    [v3, v4, v6], [v4, v5, v6], [v5, v6, v0], [v5, v0, v1], [v1, v4, v2], [v2, v4, v3],
-    // Top face (octagon)
-    [v8, v10, v9], [v8, v15, v10], [v10, v15, v11], [v11, v15, v14],
-    [v11, v14, v12], [v12, v14, v13], [v13, v14, v8], [v13, v8, v9], [v9, v10, v12], [v10, v11, v12],
-    // Side faces connecting bottom to top
-    [v0, v8, v9], [v0, v9, v1],
-    [v1, v9, v10], [v1, v10, v2],
-    [v2, v10, v11], [v2, v11, v3],
-    [v3, v11, v12], [v3, v12, v4],
-    [v4, v12, v13], [v4, v13, v5],
-    [v5, v13, v14], [v5, v14, v6],
-    [v6, v14, v15], [v6, v15, v7],
-    [v7, v15, v8], [v7, v8, v0]
-  ];
+  // Create center points for fan triangulation of octagonal faces
+  const centerX = (x1 + x2) / 2;
+  const centerY = (yFront + yBack) / 2;
+  const vCenterBottom = getOrCreateVertex(centerX, centerY, z1);
+  const vCenterTop = getOrCreateVertex(centerX, centerY, z2);
   
-  faces.forEach(face => {
+  // Triangulate octagonal faces using fan from center
+  // Bottom face (fan from center)
+  const bottomVerts = [v0, v1, v2, v3, v4, v5, v6, v7];
+  for (let i = 0; i < 8; i++) {
+    const nextI = (i + 1) % 8;
     triangles.push({
-      v1: face[0],
-      v2: face[1],
-      v3: face[2],
+      v1: vCenterBottom,
+      v2: bottomVerts[i],
+      v3: bottomVerts[nextI],
       colorIndex
     });
-  });
+  }
+  
+  // Top face (fan from center)
+  const topVerts = [v8, v9, v10, v11, v12, v13, v14, v15];
+  for (let i = 0; i < 8; i++) {
+    const nextI = (i + 1) % 8;
+    triangles.push({
+      v1: vCenterTop,
+      v2: topVerts[nextI],
+      v3: topVerts[i],
+      colorIndex
+    });
+  }
+  
+  // Side faces - connecting corresponding vertices between top and bottom
+  // Each side is a rectangle split into 2 triangles
+  for (let i = 0; i < 8; i++) {
+    const nextI = (i + 1) % 8;
+    const bottom1 = bottomVerts[i];
+    const bottom2 = bottomVerts[nextI];
+    const top1 = topVerts[i];
+    const top2 = topVerts[nextI];
+    
+    // Two triangles per rectangular side face
+    triangles.push({
+      v1: bottom1,
+      v2: top1,
+      v3: top2,
+      colorIndex
+    });
+    triangles.push({
+      v1: bottom1,
+      v2: top2,
+      v3: bottom2,
+      colorIndex
+    });
+  }
 }
 
 function rgbToColorString(color: RGB): string {
