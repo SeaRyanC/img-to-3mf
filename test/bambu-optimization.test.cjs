@@ -17,22 +17,22 @@ test('3MF Bambu Studio Color Format Tests', async (t) => {
   
   await t.test('Material names follow convention', () => {
     // Material names should be descriptive (Color_1, Color_2, etc.)
-    const materialXml = '<base name="Color_1" displaycolor="#FF0000FF" />';
+    const materialXml = '<base name="Color_1" displaycolor="#FF0000" />';
     
     assert.ok(materialXml.includes('name="Color_'));
     assert.ok(materialXml.includes('displaycolor="#'));
     
-    console.log('✓ Material names use Color_N convention');
+    console.log('✓ Material names use Color_N convention with #RRGGBB format');
   });
   
   await t.test('Display color format is RGBA hex', () => {
-    // Format should be #RRGGBBAA
-    const colorStr = '#FF0000FF'; // Red with full opacity
+    // Format should be #RRGGBB (Bambu Studio doesn't use alpha channel)
+    const colorStr = '#FF0000'; // Red without alpha
     
-    assert.strictEqual(colorStr.length, 9); // # + 8 hex digits
-    assert.ok(colorStr.endsWith('FF')); // Alpha channel
+    assert.strictEqual(colorStr.length, 7); // # + 6 hex digits
+    assert.ok(!colorStr.endsWith('FF')); // No alpha channel
     
-    console.log('✓ Display color uses #RRGGBBAA format');
+    console.log('✓ Display color uses #RRGGBB format (no alpha)');
   });
   
   await t.test('Each color is a separate object', () => {

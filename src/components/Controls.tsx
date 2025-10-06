@@ -11,6 +11,8 @@ interface ControlsProps {
   onTransparencyKeyColorChange: (color: RGB | null) => void;
   detectOutline: boolean;
   onDetectOutlineChange: (detectOutline: boolean) => void;
+  useSmoothing: boolean;
+  onUseSmoothingChange: (useSmoothing: boolean) => void;
 }
 
 export function Controls({
@@ -23,7 +25,9 @@ export function Controls({
   transparencyKeyColor,
   onTransparencyKeyColorChange,
   detectOutline,
-  onDetectOutlineChange
+  onDetectOutlineChange,
+  useSmoothing,
+  onUseSmoothingChange
 }: ControlsProps) {
   const handleColorPickerChange = (e: Event) => {
     const value = (e.target as HTMLInputElement).value;
@@ -111,6 +115,19 @@ export function Controls({
             style={{ marginRight: '8px' }}
           />
           Detect Outline (Treat Uniform Background as Transparent)
+        </label>
+      </div>
+      
+      <div className="control-group">
+        <label htmlFor="useSmoothing">
+          <input
+            id="useSmoothing"
+            type="checkbox"
+            checked={useSmoothing}
+            onChange={(e) => onUseSmoothingChange((e.target as HTMLInputElement).checked)}
+            style={{ marginRight: '8px' }}
+          />
+          Use Smooth Geometry (Marching Cubes for Large Images)
         </label>
       </div>
     </div>

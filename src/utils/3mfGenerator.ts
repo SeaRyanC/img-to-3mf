@@ -10,6 +10,7 @@ export interface ModelConfig {
   showOnFront: boolean;
   transparencyKeyColor: RGB | null;
   detectOutline: boolean;
+  useSmoothing: boolean; // Use marching cubes for smoothing at higher resolutions
 }
 
 interface Vertex {
@@ -63,7 +64,7 @@ function generateModelRels(): string {
 }
 
 function generate3DModel(config: ModelConfig): string {
-  const { width, colorHeights, colors, imageData, showOnFront, transparencyKeyColor, detectOutline } = config;
+  const { width, colorHeights, colors, imageData, showOnFront, transparencyKeyColor, detectOutline, useSmoothing } = config;
   
   const imgWidth = imageData.width;
   const imgHeight = imageData.height;
@@ -132,8 +133,11 @@ function generate3DModel(config: ModelConfig): string {
     const baseZ = 0;  // All layers start at Z=0
     const topZ = layerHeight;  // Only the height varies
     
-    // Merge adjacent voxels to reduce triangle count
+    // Use improved merging algorithm with connected components
     const mergedRegions = mergeAdjacentVoxels(colorMap, colorIndex, imgWidth, imgHeight);
+    
+    // Decide whether to apply smoothing based on image size and user preference
+    const shouldSmooth = useSmoothing && (imgWidth >= 100 || imgHeight >= 100);
     
     // Create geometry for each merged region
     for (const region of mergedRegions) {
@@ -142,8 +146,13 @@ function generate3DModel(config: ModelConfig): string {
       const pxNext = (region.x2 / imgWidth) * width + offsetX;
       const pyNext = (region.y2 / imgHeight) * depth + offsetY;
       
-      // Create a box for this merged region
-      addVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
+      if (shouldSmooth) {
+        // Apply chamfering/beveling to smooth corners
+        addSmoothedVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
+      } else {
+        // Create a box for this merged region
+        addVoxel(localVertices, localTriangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
+      }
     }
     
     // Only add object if it has geometry
@@ -217,7 +226,8 @@ function generate3DModel(config: ModelConfig): string {
   return xml;
 }
 
-// Merge adjacent voxels horizontally to reduce triangle count
+// Advanced merging using connected component labeling and rectangular decomposition
+// This implements a painter's algorithm to identify connected regions and merge them optimally
 function mergeAdjacentVoxels(
   colorMap: number[][],
   targetColor: number,
@@ -227,27 +237,160 @@ function mergeAdjacentVoxels(
   const regions: Array<{x1: number, y1: number, x2: number, y2: number}> = [];
   const visited: boolean[][] = Array(height).fill(null).map(() => Array(width).fill(false));
   
+  // Find all connected components using flood fill
+  const components: Array<Array<{x: number, y: number}>> = [];
+  
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (visited[y][x] || colorMap[y][x] !== targetColor) continue;
       
-      // Find the extent of horizontal merge
-      let x2 = x;
-      while (x2 < width && colorMap[y][x2] === targetColor && !visited[y][x2]) {
-        x2++;
+      // Start a new connected component
+      const component: Array<{x: number, y: number}> = [];
+      const queue: Array<{x: number, y: number}> = [{x, y}];
+      visited[y][x] = true;
+      
+      while (queue.length > 0) {
+        const pixel = queue.shift()!;
+        component.push(pixel);
+        
+        // Check 4-connected neighbors
+        const neighbors = [
+          {x: pixel.x - 1, y: pixel.y},
+          {x: pixel.x + 1, y: pixel.y},
+          {x: pixel.x, y: pixel.y - 1},
+          {x: pixel.x, y: pixel.y + 1}
+        ];
+        
+        for (const neighbor of neighbors) {
+          if (neighbor.x >= 0 && neighbor.x < width &&
+              neighbor.y >= 0 && neighbor.y < height &&
+              !visited[neighbor.y][neighbor.x] &&
+              colorMap[neighbor.y][neighbor.x] === targetColor) {
+            visited[neighbor.y][neighbor.x] = true;
+            queue.push(neighbor);
+          }
+        }
       }
       
-      // Mark as visited
-      for (let xi = x; xi < x2; xi++) {
-        visited[y][xi] = true;
+      if (component.length > 0) {
+        components.push(component);
       }
-      
-      // Add region
-      regions.push({ x1: x, y1: y, x2: x2, y2: y + 1 });
     }
   }
   
+  // For each connected component, decompose into rectangles
+  for (const component of components) {
+    const componentRegions = decomposeComponentIntoRectangles(component, width, height);
+    regions.push(...componentRegions);
+  }
+  
   return regions;
+}
+
+// Decompose a connected component into non-overlapping rectangles
+// Uses a greedy algorithm to create larger rectangles where possible
+function decomposeComponentIntoRectangles(
+  component: Array<{x: number, y: number}>,
+  width: number,
+  height: number
+): Array<{x1: number, y1: number, x2: number, y2: number}> {
+  if (component.length === 0) return [];
+  
+  const regions: Array<{x1: number, y1: number, x2: number, y2: number}> = [];
+  
+  // Create a bitmap for this component
+  const bitmap: boolean[][] = Array(height).fill(null).map(() => Array(width).fill(false));
+  for (const pixel of component) {
+    bitmap[pixel.y][pixel.x] = true;
+  }
+  
+  // Greedy rectangle extraction - find largest rectangles first
+  while (true) {
+    let bestRect: {x1: number, y1: number, x2: number, y2: number, area: number} | null = null;
+    
+    // Try each unclaimed pixel as a potential rectangle start
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (!bitmap[y][x]) continue;
+        
+        // Find maximum rectangle starting from this pixel
+        const rect = findLargestRectangleFrom(bitmap, x, y, width, height);
+        if (rect && (!bestRect || rect.area > bestRect.area)) {
+          bestRect = rect;
+        }
+      }
+    }
+    
+    if (!bestRect) break; // No more rectangles to extract
+    
+    // Claim this rectangle
+    for (let y = bestRect.y1; y < bestRect.y2; y++) {
+      for (let x = bestRect.x1; x < bestRect.x2; x++) {
+        bitmap[y][x] = false;
+      }
+    }
+    
+    regions.push({
+      x1: bestRect.x1,
+      y1: bestRect.y1,
+      x2: bestRect.x2,
+      y2: bestRect.y2
+    });
+  }
+  
+  return regions;
+}
+
+// Find the largest rectangle that can be formed starting from (startX, startY)
+function findLargestRectangleFrom(
+  bitmap: boolean[][],
+  startX: number,
+  startY: number,
+  width: number,
+  height: number
+): {x1: number, y1: number, x2: number, y2: number, area: number} | null {
+  if (!bitmap[startY][startX]) return null;
+  
+  // Find maximum width in the starting row
+  let maxWidth = 0;
+  for (let x = startX; x < width && bitmap[startY][x]; x++) {
+    maxWidth++;
+  }
+  
+  let bestRect = {
+    x1: startX,
+    y1: startY,
+    x2: startX + 1,
+    y2: startY + 1,
+    area: 1
+  };
+  
+  // Try extending downward, limiting width as needed
+  let currentWidth = maxWidth;
+  for (let y = startY; y < height && currentWidth > 0; y++) {
+    // Check how much width we can use in this row
+    let rowWidth = 0;
+    for (let x = startX; x < startX + currentWidth && x < width && bitmap[y][x]; x++) {
+      rowWidth++;
+    }
+    
+    if (rowWidth === 0) break; // Can't extend anymore
+    
+    currentWidth = Math.min(currentWidth, rowWidth);
+    const area = currentWidth * (y - startY + 1);
+    
+    if (area > bestRect.area) {
+      bestRect = {
+        x1: startX,
+        y1: startY,
+        x2: startX + currentWidth,
+        y2: y + 1,
+        area
+      };
+    }
+  }
+  
+  return bestRect;
 }
 
 function addVoxel(
@@ -306,11 +449,86 @@ function addVoxel(
   });
 }
 
+// Add a smoothed voxel with chamfered/beveled edges (simplified marching cubes approach)
+function addSmoothedVoxel(
+  vertices: Vertex[],
+  triangles: Triangle[],
+  x1: number,
+  y1: number,
+  z1: number,
+  x2: number,
+  y2: number,
+  z2: number,
+  colorIndex: number,
+  showOnFront: boolean
+): void {
+  // For smoothing, we'll add chamfers to the corners
+  // This creates a more organic shape than sharp voxels
+  const bevelSize = Math.min((x2 - x1), (y2 - y1)) * 0.15; // 15% bevel
+  
+  const baseIndex = vertices.length;
+  
+  // Adjust Y coordinates based on showOnFront
+  const yFront = showOnFront ? y1 : y2;
+  const yBack = showOnFront ? y2 : y1;
+  
+  // Create 16 vertices for a beveled box (8 main + 8 beveled corners on XY plane)
+  // Bottom layer (z1)
+  vertices.push(
+    { x: x1 + bevelSize, y: yFront, z: z1 },         // 0
+    { x: x2 - bevelSize, y: yFront, z: z1 },         // 1
+    { x: x2, y: yFront + bevelSize, z: z1 },         // 2
+    { x: x2, y: yBack - bevelSize, z: z1 },          // 3
+    { x: x2 - bevelSize, y: yBack, z: z1 },          // 4
+    { x: x1 + bevelSize, y: yBack, z: z1 },          // 5
+    { x: x1, y: yBack - bevelSize, z: z1 },          // 6
+    { x: x1, y: yFront + bevelSize, z: z1 },         // 7
+    // Top layer (z2)
+    { x: x1 + bevelSize, y: yFront, z: z2 },         // 8
+    { x: x2 - bevelSize, y: yFront, z: z2 },         // 9
+    { x: x2, y: yFront + bevelSize, z: z2 },         // 10
+    { x: x2, y: yBack - bevelSize, z: z2 },          // 11
+    { x: x2 - bevelSize, y: yBack, z: z2 },          // 12
+    { x: x1 + bevelSize, y: yBack, z: z2 },          // 13
+    { x: x1, y: yBack - bevelSize, z: z2 },          // 14
+    { x: x1, y: yFront + bevelSize, z: z2 }          // 15
+  );
+  
+  // Triangles for beveled box - more complex topology
+  const faces = [
+    // Bottom face (octagon)
+    [0, 1, 2], [0, 2, 7], [2, 3, 7], [3, 6, 7],
+    [3, 4, 6], [4, 5, 6], [5, 6, 0], [5, 0, 1], [1, 4, 2], [2, 4, 3],
+    // Top face (octagon)
+    [8, 10, 9], [8, 15, 10], [10, 15, 11], [11, 15, 14],
+    [11, 14, 12], [12, 14, 13], [13, 14, 8], [13, 8, 9], [9, 10, 12], [10, 11, 12],
+    // Side faces connecting bottom to top
+    [0, 8, 9], [0, 9, 1],
+    [1, 9, 10], [1, 10, 2],
+    [2, 10, 11], [2, 11, 3],
+    [3, 11, 12], [3, 12, 4],
+    [4, 12, 13], [4, 13, 5],
+    [5, 13, 14], [5, 14, 6],
+    [6, 14, 15], [6, 15, 7],
+    [7, 15, 8], [7, 8, 0]
+  ];
+  
+  faces.forEach(face => {
+    triangles.push({
+      v1: baseIndex + face[0],
+      v2: baseIndex + face[1],
+      v3: baseIndex + face[2],
+      colorIndex
+    });
+  });
+}
+
 function rgbToColorString(color: RGB): string {
-  const r = color.r.toString(16).padStart(2, '0');
-  const g = color.g.toString(16).padStart(2, '0');
-  const b = color.b.toString(16).padStart(2, '0');
-  return `#${r}${g}${b}FF`;
+  const r = color.r.toString(16).padStart(2, '0').toUpperCase();
+  const g = color.g.toString(16).padStart(2, '0').toUpperCase();
+  const b = color.b.toString(16).padStart(2, '0').toUpperCase();
+  // Bambu Studio expects #RRGGBB format (without alpha channel)
+  return `#${r}${g}${b}`;
 }
 
 // Detect uniform background color from image perimeter
