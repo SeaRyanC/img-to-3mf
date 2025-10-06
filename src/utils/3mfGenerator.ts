@@ -104,12 +104,12 @@ function generate3DModel(config: ModelConfig): string {
   const triangles: Triangle[] = [];
   
   // Generate geometry for each color layer
-  let currentZ = 0;
+  // All layers start at Z=0 and only vary in height (they are separate manifolds on the same plane)
   
   for (let colorIndex = 0; colorIndex < colors.length; colorIndex++) {
     const layerHeight = colorHeights[colorIndex];
-    const baseZ = currentZ;
-    const topZ = currentZ + layerHeight;
+    const baseZ = 0;  // All layers start at Z=0
+    const topZ = layerHeight;  // Only the height varies
     
     // Voxel-based approach (for each pixel that matches this color, create a voxel)
     for (let y = 0; y < imgHeight; y++) {
@@ -126,8 +126,6 @@ function generate3DModel(config: ModelConfig): string {
         addVoxel(vertices, triangles, px, py, baseZ, pxNext, pyNext, topZ, colorIndex, showOnFront);
       }
     }
-    
-    currentZ = topZ;
   }
   
   // Generate XML
