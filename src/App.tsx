@@ -3,7 +3,8 @@ import { ImageUpload } from './components/ImageUpload';
 import { Preview3D } from './components/Preview3D';
 import type { ImageData2D, ColorLayer, ProcessingOptions } from './types';
 import { preprocessImage } from './lib/imageProcessing';
-import { marchingCubes, createVoxelVolume, createColorMask } from './lib/marchingCubes';
+import { createColorMask } from './lib/marchingCubes';
+import { generateMeshFromContours } from './lib/contourMesh';
 import { export3MF, downloadFile } from './lib/export3mf';
 
 export function App() {
@@ -72,24 +73,9 @@ export function App() {
         const hasPixels = mask.some(v => v === 1);
         if (!hasPixels) continue;
 
-        // Create voxel volume with enough depth for solid volume
-        // Ensure minimum depth resolution (at least 6 voxels for proper marching cubes)
-        // Marching cubes needs enough resolution to properly capture volume
-        const minDepthVoxels = 6;
-        const depthVoxels = Math.max(minDepthVoxels, Math.ceil(defaultLayerHeight / voxelSize));
-        const actualDepth = depthVoxels * voxelSize;
-        
-        const volume = createVoxelVolume(mask, quantized.width, quantized.height, actualDepth, voxelSize);
-
-        // Apply marching cubes
-        const mesh = marchingCubes(
-          volume.data,
-          volume.width,
-          volume.height,
-          volume.depth,
-          0.5,
-          voxelSize
-        );
+        // Use efficient contour-based mesh generation (much fewer triangles than marching cubes)
+        const actualDepth = defaultLayerHeight;
+        const mesh = generateMeshFromContours(mask, quantized.width, quantized.height, actualDepth, voxelSize);
 
         colorLayers.push({
           color,
