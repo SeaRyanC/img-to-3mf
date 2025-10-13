@@ -54,8 +54,9 @@ export function App() {
       // Calculate physical dimensions
       const physicalWidth = options.width * options.scale;
 
-      // Calculate voxel size (aim for reasonable resolution)
-      const voxelSize = physicalWidth / imageData.width;
+      // Calculate voxel size based on image resolution
+      // Use smaller voxel size to ensure adequate depth resolution
+      const voxelSize = physicalWidth / Math.max(imageData.width, imageData.height);
       
       // Default layer height
       const defaultLayerHeight = 2.0; // mm
@@ -71,8 +72,14 @@ export function App() {
         const hasPixels = mask.some(v => v === 1);
         if (!hasPixels) continue;
 
-        // Create voxel volume
-        const volume = createVoxelVolume(mask, quantized.width, quantized.height, defaultLayerHeight, voxelSize);
+        // Create voxel volume with enough depth for solid volume
+        // Ensure minimum depth resolution (at least 6 voxels for proper marching cubes)
+        // Marching cubes needs enough resolution to properly capture volume
+        const minDepthVoxels = 6;
+        const depthVoxels = Math.max(minDepthVoxels, Math.ceil(defaultLayerHeight / voxelSize));
+        const actualDepth = depthVoxels * voxelSize;
+        
+        const volume = createVoxelVolume(mask, quantized.width, quantized.height, actualDepth, voxelSize);
 
         // Apply marching cubes
         const mesh = marchingCubes(
@@ -86,7 +93,7 @@ export function App() {
 
         colorLayers.push({
           color,
-          height: defaultLayerHeight,
+          height: actualDepth,
           mesh,
         });
       }

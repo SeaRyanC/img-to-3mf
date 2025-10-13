@@ -480,10 +480,12 @@ export function createVoxelVolume(
   const data = new Float32Array(width * height * depth);
 
   // Extrude 2D mask into 3D volume
+  // Flip Y-axis so image Y=0 (top) becomes 3D Y=height-1 (top)
   for (let z = 0; z < depth; z++) {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        const maskIdx = y * width + x;
+        // Flip Y coordinate: imageY=0 is top, but we want 3D Y=0 at bottom
+        const maskIdx = (height - 1 - y) * width + x;
         const voxelIdx = x + y * width + z * width * height;
         data[voxelIdx] = colorMask[maskIdx];
       }
