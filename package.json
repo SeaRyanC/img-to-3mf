@@ -1,0 +1,24 @@
+{
+  "name": "img-to-3mf",
+  "version": "1.0.0",
+  "description": "Convert images to 3MF files for multi-color 3D printing",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@preact/preset-vite": "^2.10.2",
+    "jszip": "^3.10.1",
+    "preact": "^10.27.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2"
+  }
+}
