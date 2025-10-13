@@ -424,18 +424,19 @@ export function marchingCubes(
           const v2 = edgeVertices[tris[i + 1]];
           const v3 = edgeVertices[tris[i + 2]];
 
-          // Add vertices
+          // Add vertices in correct winding order for outward-facing normals
+          // Reverse the order to ensure positive signed volume
           vertices.push(v1[0], v1[1], v1[2]);
-          vertices.push(v2[0], v2[1], v2[2]);
           vertices.push(v3[0], v3[1], v3[2]);
+          vertices.push(v2[0], v2[1], v2[2]);
 
-          // Calculate normal
-          const dx1 = v2[0] - v1[0];
-          const dy1 = v2[1] - v1[1];
-          const dz1 = v2[2] - v1[2];
-          const dx2 = v3[0] - v1[0];
-          const dy2 = v3[1] - v1[1];
-          const dz2 = v3[2] - v1[2];
+          // Calculate normal (accounting for reversed vertex order)
+          const dx1 = v3[0] - v1[0];
+          const dy1 = v3[1] - v1[1];
+          const dz1 = v3[2] - v1[2];
+          const dx2 = v2[0] - v1[0];
+          const dy2 = v2[1] - v1[1];
+          const dz2 = v2[2] - v1[2];
 
           const nx = dy1 * dz2 - dz1 * dy2;
           const ny = dz1 * dx2 - dx1 * dz2;
@@ -468,6 +469,7 @@ export function marchingCubes(
 
 /**
  * Create voxel volume from 2D color mask
+ * Adds 1-voxel padding on all sides to ensure proper boundary surfaces for marching cubes
  */
 export function createVoxelVolume(
   colorMask: Uint8Array,
@@ -477,22 +479,31 @@ export function createVoxelVolume(
   voxelSize: number
 ): { data: Float32Array; width: number; height: number; depth: number } {
   const depth = Math.ceil(thickness / voxelSize);
-  const data = new Float32Array(width * height * depth);
+  
+  // Add 1-voxel padding on all sides (2 extra in each dimension)
+  const paddedWidth = width + 2;
+  const paddedHeight = height + 2;
+  const paddedDepth = depth + 2;
+  const data = new Float32Array(paddedWidth * paddedHeight * paddedDepth);
 
-  // Extrude 2D mask into 3D volume
+  // Fill with 0 (empty) - this is the default, but explicit for clarity
+  data.fill(0);
+
+  // Extrude 2D mask into 3D volume with 1-voxel offset for padding
   // Flip Y-axis so image Y=0 (top) becomes 3D Y=height-1 (top)
   for (let z = 0; z < depth; z++) {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         // Flip Y coordinate: imageY=0 is top, but we want 3D Y=0 at bottom
         const maskIdx = (height - 1 - y) * width + x;
-        const voxelIdx = x + y * width + z * width * height;
+        // Add 1-voxel padding offset
+        const voxelIdx = (x + 1) + (y + 1) * paddedWidth + (z + 1) * paddedWidth * paddedHeight;
         data[voxelIdx] = colorMask[maskIdx];
       }
     }
   }
 
-  return { data, width, height, depth };
+  return { data, width: paddedWidth, height: paddedHeight, depth: paddedDepth };
 }
 
 /**
