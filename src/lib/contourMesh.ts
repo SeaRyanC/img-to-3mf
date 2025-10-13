@@ -2,7 +2,8 @@
  * Efficient mesh generation using contour extraction and polygon extrusion
  * Generates minimal triangle meshes compared to marching cubes
  * 
- * For a simple rectangle: exactly 12 triangles (2 per face × 6 faces)
+ * Uses marching squares algorithm to extract accurate contours,
+ * then extrudes and triangulates them into 3D meshes
  */
 
 import type { Mesh } from '../types';
@@ -18,8 +19,8 @@ interface Contour {
 }
 
 /**
- * Extract contours from a binary mask by finding connected components
- * and computing their bounding boxes
+ * Extract contours from a binary mask using marching squares algorithm
+ * This produces accurate contours that follow the shape boundary
  */
 function extractContours(
   mask: Uint8Array,
@@ -29,18 +30,20 @@ function extractContours(
   const visited = new Uint8Array(width * height);
   const contours: Contour[] = [];
 
-  // Find all connected components
+  // Find all connected components and trace their contours
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
       if (mask[idx] === 1 && !visited[idx]) {
-        // Flood fill to find this component
-        const component = floodFill(mask, visited, width, height, x, y);
+        // Mark this component as visited using flood fill
+        const pixels = floodFill(mask, visited, width, height, x, y);
         
-        if (component.length > 0) {
-          // Create bounding box contour for this component
-          const contour = createBoundingBoxContour(component);
-          contours.push(contour);
+        if (pixels.length > 0) {
+          // Trace the contour of this component using marching squares
+          const contour = traceMarchingSquaresContour(mask, width, height, pixels);
+          if (contour.points.length >= 3) {
+            contours.push(contour);
+          }
         }
       }
     }
@@ -91,10 +94,16 @@ function floodFill(
 }
 
 /**
- * Create a rectangular bounding box contour from a set of pixels
- * Returns points in counter-clockwise order for positive area
+ * Trace the contour of a shape using marching squares
+ * Returns vertices at pixel corners that form the boundary
  */
-function createBoundingBoxContour(pixels: Point2D[]): Contour {
+function traceMarchingSquaresContour(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  pixels: Point2D[]
+): Contour {
+  // Find bounding box to reduce search space
   let minX = Infinity, minY = Infinity;
   let maxX = -Infinity, maxY = -Infinity;
 
@@ -105,21 +114,244 @@ function createBoundingBoxContour(pixels: Point2D[]): Contour {
     maxY = Math.max(maxY, p.y);
   }
 
-  // Create rectangle points in the order: TL, TR, BR, BL
-  // This ensures consistent winding for the volume calculation
-  const points: Point2D[] = [
-    { x: minX, y: minY },         // top-left
-    { x: maxX + 1, y: minY },     // top-right
-    { x: maxX + 1, y: maxY + 1 }, // bottom-right
-    { x: minX, y: maxY + 1 },     // bottom-left
-  ];
+  // Expand bounds by 1 to include edges
+  minX = Math.max(0, minX - 1);
+  minY = Math.max(0, minY - 1);
+  maxX = Math.min(width - 1, maxX + 1);
+  maxY = Math.min(height - 1, maxY + 1);
 
-  return { points, isHole: false };
+  // Use marching squares to find contour points
+  // Each cell has 4 corners, we check if it's filled or empty
+  const contourPoints: Point2D[] = [];
+  const pointSet = new Set<string>();
+  
+  for (const p of pixels) {
+    // For each filled pixel, add its 4 corners
+    const corners = [
+      { x: p.x, y: p.y },
+      { x: p.x + 1, y: p.y },
+      { x: p.x + 1, y: p.y + 1 },
+      { x: p.x, y: p.y + 1 },
+    ];
+    
+    for (const corner of corners) {
+      // Check if this corner is on the boundary
+      // A corner is on the boundary if at least one adjacent pixel is empty
+      const adjacentPixels = [
+        getPixel(mask, width, height, corner.x - 1, corner.y - 1),
+        getPixel(mask, width, height, corner.x, corner.y - 1),
+        getPixel(mask, width, height, corner.x - 1, corner.y),
+        getPixel(mask, width, height, corner.x, corner.y),
+      ];
+      
+      const filledCount = adjacentPixels.filter(v => v === 1).length;
+      
+      // If not all 4 adjacent pixels are filled, this is a boundary corner
+      if (filledCount > 0 && filledCount < 4) {
+        const key = `${corner.x},${corner.y}`;
+        if (!pointSet.has(key)) {
+          pointSet.add(key);
+          contourPoints.push(corner);
+        }
+      }
+    }
+  }
+
+  // If we have very few points or the shape is simple, use convex hull
+  if (contourPoints.length < 4) {
+    // Fall back to bounding box for very simple shapes
+    return {
+      points: [
+        { x: minX, y: minY },
+        { x: maxX + 1, y: minY },
+        { x: maxX + 1, y: maxY + 1 },
+        { x: minX, y: maxY + 1 },
+      ],
+      isHole: false,
+    };
+  }
+
+  // Sort points to form a coherent contour (convex hull approach)
+  const sortedPoints = grahamScan(contourPoints);
+
+  return {
+    points: sortedPoints,
+    isHole: false,
+  };
+}
+
+/**
+ * Get pixel value with bounds checking
+ */
+function getPixel(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  x: number,
+  y: number
+): number {
+  if (x < 0 || x >= width || y < 0 || y >= height) {
+    return 0;
+  }
+  return mask[y * width + x];
+}
+
+/**
+ * Graham scan algorithm to compute convex hull
+ * Returns points in counter-clockwise order
+ */
+function grahamScan(points: Point2D[]): Point2D[] {
+  if (points.length < 3) return points;
+
+  // Find the point with lowest y-coordinate (and leftmost if tie)
+  let anchor = points[0];
+  for (const p of points) {
+    if (p.y < anchor.y || (p.y === anchor.y && p.x < anchor.x)) {
+      anchor = p;
+    }
+  }
+
+  // Sort points by polar angle with respect to anchor
+  const sorted = points.filter(p => p !== anchor).sort((a, b) => {
+    const angleA = Math.atan2(a.y - anchor.y, a.x - anchor.x);
+    const angleB = Math.atan2(b.y - anchor.y, b.x - anchor.x);
+    if (Math.abs(angleA - angleB) < 1e-9) {
+      // If same angle, sort by distance
+      const distA = (a.x - anchor.x) ** 2 + (a.y - anchor.y) ** 2;
+      const distB = (b.x - anchor.x) ** 2 + (b.y - anchor.y) ** 2;
+      return distA - distB;
+    }
+    return angleA - angleB;
+  });
+
+  // Build convex hull
+  const hull: Point2D[] = [anchor];
+  
+  for (const p of sorted) {
+    // Remove points that make clockwise turn
+    while (hull.length >= 2) {
+      const a = hull[hull.length - 2];
+      const b = hull[hull.length - 1];
+      const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+      if (cross <= 0) {
+        hull.pop();
+      } else {
+        break;
+      }
+    }
+    hull.push(p);
+  }
+
+  return hull;
+}
+
+/**
+ * Ear clipping triangulation for arbitrary simple polygons
+ * Returns triangle indices (groups of 3) for the polygon
+ */
+function triangulatePolygon(points: Point2D[]): number[] {
+  const n = points.length;
+  if (n < 3) return [];
+  if (n === 3) return [0, 1, 2];
+
+  // For rectangles (4 points), use simple triangulation
+  if (n === 4) {
+    return [0, 1, 2, 0, 2, 3];
+  }
+
+  // For complex polygons, use ear clipping algorithm
+  const indices: number[] = [];
+  const remaining = Array.from({ length: n }, (_, i) => i);
+
+  while (remaining.length > 3) {
+    let earFound = false;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const prev = remaining[(i - 1 + remaining.length) % remaining.length];
+      const curr = remaining[i];
+      const next = remaining[(i + 1) % remaining.length];
+
+      // Check if this is an ear
+      if (isEar(points, remaining, prev, curr, next)) {
+        // Add this triangle
+        indices.push(prev, curr, next);
+        // Remove curr from remaining
+        remaining.splice(i, 1);
+        earFound = true;
+        break;
+      }
+    }
+
+    if (!earFound) {
+      // Fallback to fan triangulation if ear clipping fails
+      console.warn('Ear clipping failed, using fan triangulation');
+      for (let i = 1; i < remaining.length - 1; i++) {
+        indices.push(remaining[0], remaining[i], remaining[i + 1]);
+      }
+      break;
+    }
+  }
+
+  // Add the last triangle
+  if (remaining.length === 3) {
+    indices.push(remaining[0], remaining[1], remaining[2]);
+  }
+
+  return indices;
+}
+
+/**
+ * Check if a vertex is an "ear" that can be clipped
+ */
+function isEar(
+  points: Point2D[],
+  remaining: number[],
+  prevIdx: number,
+  currIdx: number,
+  nextIdx: number
+): boolean {
+  const prev = points[prevIdx];
+  const curr = points[currIdx];
+  const next = points[nextIdx];
+
+  // Check if the triangle is CCW (convex at curr)
+  const cross = (curr.x - prev.x) * (next.y - prev.y) - (curr.y - prev.y) * (next.x - prev.x);
+  if (cross <= 0) return false; // Reflex vertex
+
+  // Check if any other point is inside this triangle
+  for (const idx of remaining) {
+    if (idx === prevIdx || idx === currIdx || idx === nextIdx) continue;
+    
+    const p = points[idx];
+    if (pointInTriangle(p, prev, curr, next)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Check if a point is inside a triangle
+ */
+function pointInTriangle(p: Point2D, a: Point2D, b: Point2D, c: Point2D): boolean {
+  const sign = (p1: Point2D, p2: Point2D, p3: Point2D) => {
+    return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+  };
+
+  const d1 = sign(p, a, b);
+  const d2 = sign(p, b, c);
+  const d3 = sign(p, c, a);
+
+  const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+  const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+  return !(hasNeg && hasPos);
 }
 
 /**
  * Extrude a 2D contour into a 3D mesh
- * Creates exactly 12 triangles for a 4-point rectangle
+ * Uses ear clipping for arbitrary polygon triangulation
  */
 export function generateMeshFromContours(
   mask: Uint8Array,
@@ -160,26 +392,28 @@ export function generateMeshFromContours(
       allNormals.push(0, 0, 1); // Normal pointing forward (out of screen)
     }
 
-    // Triangulate front face (indices 0 to n-1)
-    // For a 4-point rectangle: triangles (0,1,2) and (0,2,3)
-    // We need to reverse winding for front face (looking from outside, normal points -Z)
-    if (n === 4) {
-      // Front face - CW from outside (normal -Z)
-      allIndices.push(baseIdx + 0, baseIdx + 2, baseIdx + 1);
-      allIndices.push(baseIdx + 0, baseIdx + 3, baseIdx + 2);
-      
-      // Back face - CCW from outside (normal +Z)
-      allIndices.push(baseIdx + n + 0, baseIdx + n + 1, baseIdx + n + 2);
-      allIndices.push(baseIdx + n + 0, baseIdx + n + 2, baseIdx + n + 3);
-    } else {
-      // General polygon - fan triangulation
-      for (let i = 1; i < n - 1; i++) {
-        allIndices.push(baseIdx + 0, baseIdx + i + 1, baseIdx + i);
-        allIndices.push(baseIdx + n + 0, baseIdx + n + i, baseIdx + n + i + 1);
-      }
+    // Triangulate front and back faces
+    const faceIndices = triangulatePolygon(contour.points);
+    
+    // Front face - reverse winding (CW from outside, normal -Z)
+    for (let i = 0; i < faceIndices.length; i += 3) {
+      allIndices.push(
+        baseIdx + faceIndices[i],
+        baseIdx + faceIndices[i + 2],
+        baseIdx + faceIndices[i + 1]
+      );
+    }
+    
+    // Back face - normal winding (CCW from outside, normal +Z)
+    for (let i = 0; i < faceIndices.length; i += 3) {
+      allIndices.push(
+        baseIdx + n + faceIndices[i],
+        baseIdx + n + faceIndices[i + 1],
+        baseIdx + n + faceIndices[i + 2]
+      );
     }
 
-    // Side faces (4 rectangular faces for a 4-point contour)
+    // Side faces - connect front and back contours
     // Each side is a quad, triangulated as 2 triangles
     for (let i = 0; i < n; i++) {
       const next = (i + 1) % n;

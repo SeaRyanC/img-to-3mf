@@ -144,6 +144,49 @@ describe('Contour-based mesh generation', () => {
     expect(volume).toBeLessThan(610);
   });
 
+  test('circle: volume matches cylinder formula', () => {
+    // Create a filled circle with radius 10 pixels
+    const width = 30, height = 30;
+    const centerX = 15, centerY = 15, radius = 10;
+    const imageData = new Uint8ClampedArray(width * height * 4);
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist <= radius) {
+          const idx = (y * width + x) * 4;
+          imageData[idx] = 255;     // R
+          imageData[idx + 1] = 0;   // G
+          imageData[idx + 2] = 0;   // B
+          imageData[idx + 3] = 255; // A
+        }
+      }
+    }
+    
+    const mask = createColorMask(imageData, width, height, [255, 0, 0]);
+    const thickness = 3.0;
+    const voxelSize = 1.0;
+    
+    const mesh = generateMeshFromContours(mask, width, height, thickness, voxelSize);
+    const volume = calculateMeshVolume(mesh);
+    
+    // Expected volume: π × r² × h = π × 10² × 3 ≈ 942.48 mm³
+    const expectedVolume = Math.PI * radius * radius * thickness;
+    console.log(`Circle volume: ${volume.toFixed(2)} mm³ (expected ${expectedVolume.toFixed(2)} mm³)`);
+    
+    // Convex hull approximation should be within 90-110% of circle volume
+    // (since convex hull of discrete circle pixels approximates the circle)
+    const tolerance = 0.15; // 15% tolerance for discrete approximation
+    expect(volume).toBeGreaterThan(expectedVolume * (1 - tolerance));
+    expect(volume).toBeLessThan(expectedVolume * (1 + tolerance));
+    
+    // Verify mesh is not flat
+    expect(volume).toBeGreaterThan(500);
+  });
+
   test('rectangle with hole (TODO: implement hole support)', () => {
     // Create outer rectangle
     const width = 20, height = 20;
@@ -165,13 +208,13 @@ describe('Contour-based mesh generation', () => {
 
     const mesh = generateMeshFromContours(mask, width, height, 2.0, 1.0);
     
-    // For now, bounding box approach will treat this as solid 10x10x2 = 200 mm³
+    // For now, convex hull approach will treat this as solid 10x10x2 = 200 mm³
     // TODO: Implement proper hole detection for accurate volume
     // Expected with holes: (10×10 - 4×4) × 2 = 84 × 2 = 168 mm³
     
     const volume = calculateMeshVolume(mesh);
     console.log(`Rectangle with hole volume: ${volume.toFixed(2)} mm³`);
-    console.log(`(Note: Hole support not yet implemented, treats as solid bounding box)`);
+    console.log(`(Note: Hole support not yet implemented, uses convex hull)`);
     
     // Just verify we get some reasonable volume
     expect(volume).toBeGreaterThan(0);
