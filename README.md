@@ -158,9 +158,44 @@ npm test
 Tests include:
 - Volume validation for rectangles (100% accurate)
 - Volume validation for circles (~10% tolerance due to pixel approximation)
-- Concave shape handling (L-shapes, C-shapes)
+- Concave shape handling (L-shapes, C-shapes, pac-man)
 - Triangle count optimization
 - Boundary extraction accuracy
+- Debug validation with mesh rasterization
+
+### Debug Tools
+
+Located in `src/lib/debug/`:
+
+#### Mesh Rasterizer
+
+Renders 3D triangle meshes back to 2D images for visual validation:
+
+```typescript
+import { rasterizeMesh } from './lib/debug/meshRasterizer';
+
+// Rasterize mesh back to 2D
+const rasterized = rasterizeMesh(mesh, width, height, [255, 0, 0]);
+// Returns: { data: Uint8ClampedArray, width, height }
+```
+
+#### Image Differ
+
+Compares input images with rasterized mesh output:
+
+```typescript
+import { compareImages, printDiffSummary } from './lib/debug/imageDiff';
+
+const diff = compareImages(originalImage, rasterizedImage);
+printDiffSummary(diff);
+// Prints: pixel count, difference percentage, status
+```
+
+These tools validate that:
+- Generated meshes accurately represent input shapes
+- Concave features are preserved
+- Volume calculations are correct
+- Triangle winding is proper
 
 ## License
 
