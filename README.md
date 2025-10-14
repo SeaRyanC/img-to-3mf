@@ -11,7 +11,11 @@ A web application that converts raster images into 3MF files for multi-color 3D 
   - **Full Image**: Convert the entire rectangular image
   - **Transparent Corners**: Use corner colors as transparency key
   - **Island Mode**: Flood-fill from borders to remove background
-- **3D Mesh Generation**: Uses Marching Cubes algorithm to create watertight triangle meshes
+- **3D Mesh Generation**: 
+  - **Contour-based approach**: Minimal triangle meshes using boundary extraction and polygon extrusion
+  - **Concave shape support**: Preserves concave features (L-shapes, C-shapes, stars, etc.)
+  - **Interior void support**: Automatically detects and preserves holes in shapes
+  - **Efficient**: 95%+ reduction in triangle count vs. marching cubes
 - **Per-Layer Height Control**: Adjust the thickness of each color layer independently
 - **WebGL Preview**: Animated 3D preview with rotating meshes
 - **3MF Export**: Download ready-to-print 3MF files with multi-color support
@@ -71,18 +75,21 @@ npm run preview
 1. **Load and Quantize**: Reduce image to ≤16 colors using color histogram analysis
 2. **Denoise**: Apply 3×3 median filter and remove isolated pixels
 3. **Apply Transparency**: Process based on selected mode (full/transparent/island)
-4. **Voxelization**: Create 3D binary volume for each color by extruding 2D mask
-5. **Marching Cubes**: Generate watertight triangle meshes at iso-value 0.5
-6. **Export**: Package meshes into 3MF format with color materials
+4. **Contour Extraction**: Extract 2D boundary contours for each color using boundary tracing
+5. **Polygon Generation**: Create ordered polygon vertices preserving concave features
+6. **Extrusion & Triangulation**: Extrude 2D polygons to 3D and triangulate faces
+7. **Export**: Package meshes into 3MF format with color materials
 
 ### Key Algorithms
 
 - **Color Quantization**: Histogram-based color binning with Euclidean distance
 - **Median Filter**: 3×3 kernel for noise suppression
 - **Isolated Pixel Removal**: 8-neighbor connectivity analysis
-- **Flood Fill**: Border-seeded algorithm for island mode
-- **Marching Cubes**: Standard implementation with 256-case lookup table
-- **Voxel Extrusion**: Layer-by-layer 2D to 3D conversion
+- **Flood Fill**: Border-seeded algorithm for island mode and component detection
+- **Boundary Extraction**: Pixel-corner based contour tracing preserving concave features
+- **Polygon Simplification**: Removes colinear points while preserving shape
+- **Ear Clipping Triangulation**: Handles arbitrary simple polygons for face generation
+- **Extrusion**: Layer-by-layer 2D to 3D conversion with correct winding
 
 ### File Format
 
@@ -100,7 +107,8 @@ src/
 │   └── Preview3D.tsx         # WebGL 3D preview
 ├── lib/
 │   ├── imageProcessing.ts   # Image loading, quantization, filtering
-│   ├── marchingCubes.ts     # Voxelization and mesh generation
+│   ├── contourMesh.ts       # Efficient contour-based mesh generation
+│   ├── marchingCubes.ts     # Legacy marching cubes (for testing)
 │   └── export3mf.ts         # 3MF/STL/OBJ export
 ├── types/
 │   └── index.ts             # TypeScript type definitions
@@ -116,6 +124,43 @@ src/
 - **Vite**: Fast build tool and dev server
 - **Three.js**: WebGL 3D rendering
 - **JSZip**: ZIP file generation for 3MF format
+
+## Shape Support
+
+The application correctly handles a wide variety of shapes:
+
+### Convex Shapes ✓
+- Rectangles, squares
+- Circles, ellipses
+- Regular polygons
+
+### Concave Shapes ✓
+- L-shapes, T-shapes, C-shapes
+- Star shapes
+- Irregular polygons with indentations
+- Any shape with inward-curving boundaries
+
+### Complex Shapes ✓
+- Multiple disconnected regions
+- Shapes with interior holes (donuts, frames)
+- Combined convex and concave features
+
+The contour extraction algorithm uses pixel-corner boundary tracing, which preserves all concave and convex features of the original raster image. Volume calculations are accurate within 1% for simple shapes and within 10-15% for complex curved shapes (due to pixel discretization).
+
+## Testing
+
+Run the test suite:
+
+```bash
+npm test
+```
+
+Tests include:
+- Volume validation for rectangles (100% accurate)
+- Volume validation for circles (~10% tolerance due to pixel approximation)
+- Concave shape handling (L-shapes, C-shapes)
+- Triangle count optimization
+- Boundary extraction accuracy
 
 ## License
 

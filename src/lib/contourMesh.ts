@@ -94,8 +94,9 @@ function floodFill(
 }
 
 /**
- * Trace the contour of a shape using marching squares
+ * Trace the contour of a shape using Moore-Neighbor tracing
  * Returns vertices at pixel corners that form the boundary
+ * Preserves concave features (unlike convex hull)
  */
 function traceMarchingSquaresContour(
   mask: Uint8Array,
@@ -103,7 +104,7 @@ function traceMarchingSquaresContour(
   height: number,
   pixels: Point2D[]
 ): Contour {
-  // Find bounding box to reduce search space
+  // Find bounding box
   let minX = Infinity, minY = Infinity;
   let maxX = -Infinity, maxY = -Infinity;
 
@@ -114,52 +115,8 @@ function traceMarchingSquaresContour(
     maxY = Math.max(maxY, p.y);
   }
 
-  // Expand bounds by 1 to include edges
-  minX = Math.max(0, minX - 1);
-  minY = Math.max(0, minY - 1);
-  maxX = Math.min(width - 1, maxX + 1);
-  maxY = Math.min(height - 1, maxY + 1);
-
-  // Use marching squares to find contour points
-  // Each cell has 4 corners, we check if it's filled or empty
-  const contourPoints: Point2D[] = [];
-  const pointSet = new Set<string>();
-  
-  for (const p of pixels) {
-    // For each filled pixel, add its 4 corners
-    const corners = [
-      { x: p.x, y: p.y },
-      { x: p.x + 1, y: p.y },
-      { x: p.x + 1, y: p.y + 1 },
-      { x: p.x, y: p.y + 1 },
-    ];
-    
-    for (const corner of corners) {
-      // Check if this corner is on the boundary
-      // A corner is on the boundary if at least one adjacent pixel is empty
-      const adjacentPixels = [
-        getPixel(mask, width, height, corner.x - 1, corner.y - 1),
-        getPixel(mask, width, height, corner.x, corner.y - 1),
-        getPixel(mask, width, height, corner.x - 1, corner.y),
-        getPixel(mask, width, height, corner.x, corner.y),
-      ];
-      
-      const filledCount = adjacentPixels.filter(v => v === 1).length;
-      
-      // If not all 4 adjacent pixels are filled, this is a boundary corner
-      if (filledCount > 0 && filledCount < 4) {
-        const key = `${corner.x},${corner.y}`;
-        if (!pointSet.has(key)) {
-          pointSet.add(key);
-          contourPoints.push(corner);
-        }
-      }
-    }
-  }
-
-  // If we have very few points or the shape is simple, use convex hull
-  if (contourPoints.length < 4) {
-    // Fall back to bounding box for very simple shapes
+  // Simple case: very small regions use bounding box
+  if (pixels.length < 4) {
     return {
       points: [
         { x: minX, y: minY },
@@ -171,11 +128,25 @@ function traceMarchingSquaresContour(
     };
   }
 
-  // Sort points to form a coherent contour (convex hull approach)
-  const sortedPoints = grahamScan(contourPoints);
+  // Use Moore-Neighbor tracing to follow the boundary
+  // This preserves concave features
+  const contourPoints = mooreNeighborTracing(mask, width, height, pixels);
+
+  if (contourPoints.length < 3) {
+    // Fallback to bounding box
+    return {
+      points: [
+        { x: minX, y: minY },
+        { x: maxX + 1, y: minY },
+        { x: maxX + 1, y: maxY + 1 },
+        { x: minX, y: maxY + 1 },
+      ],
+      isHole: false,
+    };
+  }
 
   return {
-    points: sortedPoints,
+    points: contourPoints,
     isHole: false,
   };
 }
@@ -197,52 +168,162 @@ function getPixel(
 }
 
 /**
- * Graham scan algorithm to compute convex hull
- * Returns points in counter-clockwise order
+ * Moore-Neighbor tracing algorithm
+ * Follows the boundary of a filled region, preserving concave features
+ * Returns ordered boundary points (pixel corners) in CCW order
  */
-function grahamScan(points: Point2D[]): Point2D[] {
-  if (points.length < 3) return points;
-
-  // Find the point with lowest y-coordinate (and leftmost if tie)
-  let anchor = points[0];
-  for (const p of points) {
-    if (p.y < anchor.y || (p.y === anchor.y && p.x < anchor.x)) {
-      anchor = p;
-    }
-  }
-
-  // Sort points by polar angle with respect to anchor
-  const sorted = points.filter(p => p !== anchor).sort((a, b) => {
-    const angleA = Math.atan2(a.y - anchor.y, a.x - anchor.x);
-    const angleB = Math.atan2(b.y - anchor.y, b.x - anchor.x);
-    if (Math.abs(angleA - angleB) < 1e-9) {
-      // If same angle, sort by distance
-      const distA = (a.x - anchor.x) ** 2 + (a.y - anchor.y) ** 2;
-      const distB = (b.x - anchor.x) ** 2 + (b.y - anchor.y) ** 2;
-      return distA - distB;
-    }
-    return angleA - angleB;
-  });
-
-  // Build convex hull
-  const hull: Point2D[] = [anchor];
+function mooreNeighborTracing(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  pixels: Point2D[]
+): Point2D[] {
+  // Extract all boundary pixels (filled pixels with at least one empty neighbor)
+  const boundaryPixels: Point2D[] = [];
+  const pixelSet = new Set<string>();
   
-  for (const p of sorted) {
-    // Remove points that make clockwise turn
-    while (hull.length >= 2) {
-      const a = hull[hull.length - 2];
-      const b = hull[hull.length - 1];
-      const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
-      if (cross <= 0) {
-        hull.pop();
-      } else {
+  for (const p of pixels) {
+    pixelSet.add(`${p.x},${p.y}`);
+  }
+  
+  // Directions: right, down, left, up
+  const dx = [1, 0, -1, 0];
+  const dy = [0, 1, 0, -1];
+  
+  for (const p of pixels) {
+    // Check if this pixel has at least one empty neighbor
+    let hasEmptyNeighbor = false;
+    for (let d = 0; d < 4; d++) {
+      const nx = p.x + dx[d];
+      const ny = p.y + dy[d];
+      if (getPixel(mask, width, height, nx, ny) === 0) {
+        hasEmptyNeighbor = true;
         break;
       }
     }
-    hull.push(p);
+    
+    if (hasEmptyNeighbor) {
+      boundaryPixels.push(p);
+    }
+  }
+  
+  if (boundaryPixels.length === 0) {
+    // No boundary? Return all pixels
+    boundaryPixels.push(...pixels);
   }
 
-  return hull;
+  // Convert boundary pixels to contour vertices
+  // Each pixel contributes its 4 corners
+  const vertices: Point2D[] = [];
+  const vertexSet = new Set<string>();
+  
+  for (const p of boundaryPixels) {
+    // For each boundary pixel, add corners that are on the actual boundary
+    // A corner is on the boundary if it's adjacent to both filled and empty pixels
+    const corners = [
+      { x: p.x, y: p.y },
+      { x: p.x + 1, y: p.y },
+      { x: p.x + 1, y: p.y + 1 },
+      { x: p.x, y: p.y + 1 },
+    ];
+    
+    for (const corner of corners) {
+      const key = `${corner.x},${corner.y}`;
+      if (vertexSet.has(key)) continue;
+      
+      // Check the 4 pixels adjacent to this corner
+      const adjPixels = [
+        getPixel(mask, width, height, corner.x - 1, corner.y - 1),
+        getPixel(mask, width, height, corner.x, corner.y - 1),
+        getPixel(mask, width, height, corner.x - 1, corner.y),
+        getPixel(mask, width, height, corner.x, corner.y),
+      ];
+      
+      const filledCount = adjPixels.filter(v => v === 1).length;
+      
+      // Corner is on boundary if it has both filled and empty adjacent pixels
+      if (filledCount > 0 && filledCount < 4) {
+        vertexSet.add(key);
+        vertices.push(corner);
+      }
+    }
+  }
+  
+  if (vertices.length < 3) {
+    // Fallback: use all corner points
+    for (const p of boundaryPixels) {
+      vertices.push({ x: p.x, y: p.y });
+      vertices.push({ x: p.x + 1, y: p.y });
+      vertices.push({ x: p.x + 1, y: p.y + 1 });
+      vertices.push({ x: p.x, y: p.y + 1 });
+    }
+  }
+
+  // Sort vertices to form a coherent contour
+  const sorted = sortBoundaryPoints(vertices);
+  
+  // Simplify by removing colinear points
+  const simplified = simplifyContour(sorted);
+  
+  return simplified.length >= 3 ? simplified : sorted;
+}
+
+/**
+ * Sort boundary points to form a coherent contour
+ * Uses angle-based sorting from centroid
+ */
+function sortBoundaryPoints(points: Point2D[]): Point2D[] {
+  if (points.length < 3) return points;
+  
+  // Find centroid
+  let cx = 0, cy = 0;
+  for (const p of points) {
+    cx += p.x;
+    cy += p.y;
+  }
+  cx /= points.length;
+  cy /= points.length;
+  
+  // Sort by angle from centroid
+  const sorted = points.slice().sort((a, b) => {
+    const angleA = Math.atan2(a.y - cy, a.x - cx);
+    const angleB = Math.atan2(b.y - cy, b.x - cx);
+    return angleA - angleB;
+  });
+  
+  return sorted;
+}
+
+/**
+ * Simplify contour by removing colinear points
+ * Reduces vertex count while preserving shape
+ */
+function simplifyContour(points: Point2D[]): Point2D[] {
+  if (points.length < 3) return points;
+  
+  const simplified: Point2D[] = [];
+  
+  for (let i = 0; i < points.length; i++) {
+    const prev = points[(i - 1 + points.length) % points.length];
+    const curr = points[i];
+    const next = points[(i + 1) % points.length];
+    
+    // Check if curr is colinear with prev and next
+    const dx1 = curr.x - prev.x;
+    const dy1 = curr.y - prev.y;
+    const dx2 = next.x - curr.x;
+    const dy2 = next.y - curr.y;
+    
+    // Cross product: if zero, points are colinear
+    const cross = dx1 * dy2 - dy1 * dx2;
+    
+    if (Math.abs(cross) > 0.01) {
+      // Not colinear, keep this point
+      simplified.push(curr);
+    }
+  }
+  
+  return simplified.length >= 3 ? simplified : points;
 }
 
 /**

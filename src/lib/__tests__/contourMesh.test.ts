@@ -187,6 +187,81 @@ describe('Contour-based mesh generation', () => {
     expect(volume).toBeGreaterThan(500);
   });
 
+  test('L-shaped region: concave shape handled correctly', () => {
+    // Create an L-shaped region
+    const width = 20, height = 20;
+    const mask = new Uint8Array(width * height);
+    
+    // Vertical bar: (5,5) to (10,15)
+    for (let y = 5; y < 15; y++) {
+      for (let x = 5; x < 10; x++) {
+        mask[y * width + x] = 1;
+      }
+    }
+    
+    // Horizontal bar: (5,10) to (15,15)
+    for (let y = 10; y < 15; y++) {
+      for (let x = 5; x < 15; x++) {
+        mask[y * width + x] = 1;
+      }
+    }
+
+    const thickness = 2.0;
+    const voxelSize = 1.0;
+    const mesh = generateMeshFromContours(mask, width, height, thickness, voxelSize);
+    const volume = calculateMeshVolume(mesh);
+    
+    // L-shape volume:
+    // Vertical part: 5×10×2 = 100 mm³
+    // Horizontal part: 10×5×2 = 100 mm³
+    // Overlap: 5×5×2 = 50 mm³
+    // Total: 100 + 100 - 50 = 150 mm³
+    const expectedVolume = 150;
+    console.log(`L-shape volume: ${volume.toFixed(2)} mm³ (expected ${expectedVolume.toFixed(2)} mm³)`);
+    
+    // With convex hull, this would be ~200 mm³ (10×10×2), which is wrong
+    // With proper concave support, should be ~150 mm³
+    expect(volume).toBeGreaterThan(140);
+    expect(volume).toBeLessThan(160);
+  });
+
+  test('C-shaped (concave) region: volume correct', () => {
+    // Create a C-shaped region (rectangle with a rectangular bite out of one side)
+    const width = 20, height = 20;
+    const mask = new Uint8Array(width * height);
+    
+    // Fill outer rectangle (5,5) to (15,15)
+    for (let y = 5; y < 15; y++) {
+      for (let x = 5; x < 15; x++) {
+        mask[y * width + x] = 1;
+      }
+    }
+    
+    // Cut out notch on right side (12,7) to (15,13) to make C-shape
+    for (let y = 7; y < 13; y++) {
+      for (let x = 12; x < 15; x++) {
+        mask[y * width + x] = 0;
+      }
+    }
+
+    const thickness = 2.0;
+    const voxelSize = 1.0;
+    const mesh = generateMeshFromContours(mask, width, height, thickness, voxelSize);
+    const volume = calculateMeshVolume(mesh);
+    
+    // C-shape volume:
+    // Full rectangle: 10×10×2 = 200 mm³
+    // Notch removed: 3×6×2 = 36 mm³
+    // Expected: 200 - 36 = 164 mm³
+    const expectedVolume = 164;
+    console.log(`C-shape volume: ${volume.toFixed(2)} mm³ (expected ${expectedVolume.toFixed(2)} mm³)`);
+    
+    // With convex hull, this would be ~200 mm³ (filling in the notch)
+    // With proper concave support, should be ~164 mm³
+    expect(volume).toBeGreaterThan(160);
+    expect(volume).toBeLessThan(168);
+  });
+
   test('rectangle with hole (TODO: implement hole support)', () => {
     // Create outer rectangle
     const width = 20, height = 20;
