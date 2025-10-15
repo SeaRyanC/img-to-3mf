@@ -1,6 +1,52 @@
 import { zip } from 'fflate';
 import type { Mesh } from './meshGeneration';
 
+interface MeshData {
+  vertices: number[];
+  triangles: number[];
+}
+
+// Parse STL ASCII or Binary format and extract vertices/triangles
+function parseSTL(stlData: string): MeshData {
+  const vertices: number[] = [];
+  const triangles: number[] = [];
+  const vertexMap = new Map<string, number>();
+  let vertexIndex = 0;
+  
+  function addVertex(x: number, y: number, z: number): number {
+    const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
+    if (vertexMap.has(key)) {
+      return vertexMap.get(key)!;
+    }
+    vertices.push(x, y, z);
+    vertexMap.set(key, vertexIndex);
+    return vertexIndex++;
+  }
+  
+  // Try to parse as ASCII STL
+  const lines = stlData.split('\n');
+  let currentTriangle: number[] = [];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('vertex')) {
+      const parts = trimmed.split(/\s+/);
+      const x = parseFloat(parts[1]);
+      const y = parseFloat(parts[2]);
+      const z = parseFloat(parts[3]);
+      const idx = addVertex(x, y, z);
+      currentTriangle.push(idx);
+      
+      if (currentTriangle.length === 3) {
+        triangles.push(...currentTriangle);
+        currentTriangle = [];
+      }
+    }
+  }
+  
+  return { vertices, triangles };
+}
+
 export async function generate3MF(
   meshes: Array<{ mesh: Mesh; color: string; name: string }>,
   backplateMesh?: Mesh,
@@ -33,7 +79,8 @@ export async function generate3MF(
   
   // Add backplate if present
   if (backplateMesh && backplateColor) {
-    const objFile = createObjectModel(objectId, backplateMesh);
+    const meshData = parseSTL(backplateMesh.data);
+    const objFile = createObjectModel(objectId, meshData);
     files[`3D/Objects/object_${objectId}.model`] = new TextEncoder().encode(objFile);
     objectRels.push(`  <Relationship Target="/3D/Objects/object_${objectId}.model" Id="rel-${objectId}" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>`);
     
@@ -50,7 +97,8 @@ export async function generate3MF(
   
   // Add color layer meshes
   for (const { mesh } of meshes) {
-    const objFile = createObjectModel(objectId, mesh);
+    const meshData = parseSTL(mesh.data);
+    const objFile = createObjectModel(objectId, meshData);
     files[`3D/Objects/object_${objectId}.model`] = new TextEncoder().encode(objFile);
     objectRels.push(`  <Relationship Target="/3D/Objects/object_${objectId}.model" Id="rel-${objectId}" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>`);
     
@@ -98,7 +146,7 @@ ${objectRels.join('\n')}
   });
 }
 
-function createObjectModel(id: number, mesh: Mesh): string {
+function createObjectModel(id: number, mesh: MeshData): string {
   let verticesXml = '';
   for (let i = 0; i < mesh.vertices.length; i += 3) {
     const x = mesh.vertices[i].toFixed(6);

@@ -92,24 +92,28 @@ export function Preview({ meshes, backplateMesh, backplateColor }: PreviewProps)
     
     // Add backplate
     if (backplateMesh && backplateColor) {
-      const geometry = createThreeGeometry(backplateMesh);
-      const material = new THREE.MeshPhongMaterial({ 
-        color: backplateColor,
-        side: THREE.DoubleSide
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      scene.add(mesh);
+      const geometry = parseSTLToGeometry(backplateMesh.data);
+      if (geometry) {
+        const material = new THREE.MeshPhongMaterial({ 
+          color: backplateColor,
+          side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+      }
     }
     
     // Add color layer meshes
     for (const { mesh, color } of meshes) {
-      const geometry = createThreeGeometry(mesh);
-      const material = new THREE.MeshPhongMaterial({ 
-        color: color,
-        side: THREE.DoubleSide
-      });
-      const threeMesh = new THREE.Mesh(geometry, material);
-      scene.add(threeMesh);
+      const geometry = parseSTLToGeometry(mesh.data);
+      if (geometry) {
+        const material = new THREE.MeshPhongMaterial({ 
+          color: color,
+          side: THREE.DoubleSide
+        });
+        const threeMesh = new THREE.Mesh(geometry, material);
+        scene.add(threeMesh);
+      }
     }
     
     // Center camera on objects
@@ -142,15 +146,29 @@ export function Preview({ meshes, backplateMesh, backplateColor }: PreviewProps)
   return <canvas ref={canvasRef} />;
 }
 
-function createThreeGeometry(mesh: Mesh): THREE.BufferGeometry {
+function parseSTLToGeometry(stlData: string): THREE.BufferGeometry | null {
+  const vertices: number[] = [];
+  
+  // Parse ASCII STL
+  const lines = stlData.split('\n');
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('vertex')) {
+      const parts = trimmed.split(/\s+/);
+      vertices.push(
+        parseFloat(parts[1]),
+        parseFloat(parts[2]),
+        parseFloat(parts[3])
+      );
+    }
+  }
+  
+  if (vertices.length === 0) return null;
+  
   const geometry = new THREE.BufferGeometry();
-  
-  const positions = new Float32Array(mesh.vertices);
+  const positions = new Float32Array(vertices);
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  
-  const indices = new Uint32Array(mesh.triangles);
-  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-  
   geometry.computeVertexNormals();
   
   return geometry;

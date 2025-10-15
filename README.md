@@ -65,7 +65,20 @@ The built files will be in the `dist` directory.
 - **TypeScript 5.9**: Type-safe development
 - **Vite**: Fast build tooling
 - **Three.js**: WebGL-based 3D preview
+- **OpenSCAD WASM**: WebAssembly port of OpenSCAD for mesh generation using the `surface()` function
 - **fflate**: ZIP compression for 3MF packaging
+
+## How It Works
+
+The application uses OpenSCAD's `surface()` function to convert images into 3D meshes:
+
+1. Each color layer is extracted as a monochrome PNG image
+2. PNGs are processed by OpenSCAD WASM using the `surface()` function
+3. OpenSCAD generates proper triangulated meshes from the heightmap data
+4. Meshes are converted to 3MF format with proper color metadata
+5. All layers are combined into a single 3MF file
+
+This approach ensures high-quality, printable meshes that work with all major 3D printers and slicing software.
 
 ## 3MF File Structure
 

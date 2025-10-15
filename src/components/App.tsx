@@ -3,8 +3,8 @@ import type { TransparencyMode, BackgroundMode, ColorLayer, AppState } from '../
 import { Preview } from './Preview';
 import { preprocessImage } from '../utils/imageProcessing';
 import { quantizeColors, rgbToHex } from '../utils/colorQuantization';
-import { generateColorLayers } from '../utils/layerGeneration';
-import { createLayerMesh, createBackplateMesh } from '../utils/meshGeneration';
+import { generateColorLayers, imageDataToPNG } from '../utils/layerGeneration';
+import { createLayerMeshFromImage, createBackplateMesh } from '../utils/meshGeneration';
 import { generate3MF, download3MF } from '../utils/3mfGenerator';
 
 export function App() {
@@ -90,23 +90,36 @@ export function App() {
     }
   };
   
-  const updateMeshes = (imageData: ImageData, colors: ColorLayer[], width: number, height: number, bgMode: BackgroundMode, _bpColor: string, bpThickness: number) => {
+  const updateMeshes = async (imageData: ImageData, colors: ColorLayer[], width: number, height: number, bgMode: BackgroundMode, _bpColor: string, bpThickness: number) => {
     const layers = generateColorLayers(imageData, colors);
     const newMeshes = [];
     
+    let layerIndex = 0;
     for (const color of colors) {
       const layerData = layers.get(color.color);
       if (layerData) {
-        const mesh = createLayerMesh(layerData, width, height, 5, color.height);
-        newMeshes.push({ mesh, color: color.color, name: `Layer ${color.color}` });
+        try {
+          // Convert ImageData to PNG blob
+          const pngBlob = await imageDataToPNG(layerData);
+          // Use OpenSCAD to create mesh from PNG
+          const mesh = await createLayerMeshFromImage(pngBlob, width, height, color.height, `layer_${layerIndex}.png`);
+          newMeshes.push({ mesh, color: color.color, name: `Layer ${color.color}` });
+          layerIndex++;
+        } catch (error) {
+          console.error('Error creating mesh for color', color.color, error);
+        }
       }
     }
     
     setMeshes(newMeshes);
     
     if (bgMode === 'backplate') {
-      const bpMesh = createBackplateMesh(width, height, bpThickness);
-      setBackplateMesh(bpMesh);
+      try {
+        const bpMesh = await createBackplateMesh(width, height, bpThickness);
+        setBackplateMesh(bpMesh);
+      } catch (error) {
+        console.error('Error creating backplate mesh:', error);
+      }
     } else {
       setBackplateMesh(null);
     }
