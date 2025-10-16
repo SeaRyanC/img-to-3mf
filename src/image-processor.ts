@@ -83,14 +83,20 @@ function floodFillBackground(
 
   const queue: [number, number][] = [];
 
-  // Start from top-left corner
-  const startX = 0;
-  const startY = 0;
-  const startPixel = intToRGBA(image.getPixelColor(startX, startY));
-  const startHex = rgbToHex(startPixel.r, startPixel.g, startPixel.b);
-  const startColor = colorMap.get(startHex) || startHex;
-
-  queue.push([startX, startY]);
+  // Start flood fill from ALL edges of the image
+  // This ensures we capture background pixels that touch any edge
+  
+  // Top and bottom edges
+  for (let x = 0; x < width; x++) {
+    queue.push([x, 0]); // Top edge
+    queue.push([x, height - 1]); // Bottom edge
+  }
+  
+  // Left and right edges (excluding corners already added)
+  for (let y = 1; y < height - 1; y++) {
+    queue.push([0, y]); // Left edge
+    queue.push([width - 1, y]); // Right edge
+  }
 
   while (queue.length > 0) {
     const [x, y] = queue.shift()!;
@@ -104,17 +110,31 @@ function floodFillBackground(
     const hex = rgbToHex(pixel.r, pixel.g, pixel.b);
     const clusterColor = colorMap.get(hex) || hex;
 
-    // If same color as starting point (within threshold), mark as background and continue flood fill
-    if (clusterColor === startColor || 
-        colorDistance(hexToRgb(clusterColor), hexToRgb(startColor)) <= COLOR_SIMILARITY_THRESHOLD) {
-      background[y][x] = true;
+    // Mark as background - we'll flood fill from each edge pixel
+    // If it's a background color, continue flooding
+    background[y][x] = true;
 
-      // Add neighbors to queue
-      queue.push([x + 1, y]);
-      queue.push([x - 1, y]);
-      queue.push([x, y + 1]);
-      queue.push([x, y - 1]);
-    }
+    // Add neighbors to queue to continue flood fill
+    // Only add if they're the same or similar color (background continuation)
+    const checkAndAdd = (nx: number, ny: number) => {
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) return;
+      if (visited[ny][nx]) return;
+      
+      const neighborPixel = intToRGBA(image.getPixelColor(nx, ny));
+      const neighborHex = rgbToHex(neighborPixel.r, neighborPixel.g, neighborPixel.b);
+      const neighborCluster = colorMap.get(neighborHex) || neighborHex;
+      
+      // Only continue flooding if the neighbor is the same/similar color
+      if (neighborCluster === clusterColor || 
+          colorDistance(hexToRgb(neighborCluster), hexToRgb(clusterColor)) <= COLOR_SIMILARITY_THRESHOLD) {
+        queue.push([nx, ny]);
+      }
+    };
+
+    checkAndAdd(x + 1, y);
+    checkAndAdd(x - 1, y);
+    checkAndAdd(x, y + 1);
+    checkAndAdd(x, y - 1);
   }
 
   return background;
