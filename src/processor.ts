@@ -29,8 +29,14 @@ export async function processImageTo3MF(
   const tempDir = path.join(path.dirname(outputFilepath), `temp_${Date.now()}`);
   fs.mkdirSync(tempDir, { recursive: true });
 
+  // Calculate image dimensions in mm (scale so longest edge is 100mm)
+  const scale = 100 / Math.max(processedImage.width, processedImage.height);
+  const imageWidthMm = processedImage.width * scale;
+  const imageHeightMm = processedImage.height * scale;
+
   try {
     const coloredObjects: ColoredObject[] = [];
+    const debugScadParts: string[] = [];
 
     // Process backplane if configured
     if (config.options.backplane) {
@@ -53,9 +59,15 @@ export async function processImageTo3MF(
         color: '#000000',
         filamentName: config.options.backplane.color,
       });
+
+      debugScadParts.push(`// Backplane (${config.options.backplane.color})
+color([0, 0, 0]) translate([0, 0, 0])
+  surface(file = "backplane_mask.png", center = false, invert = true);
+`);
     }
 
     // Process each color
+    let colorIndex = 0;
     for (const [hexColor, colorConfig] of Object.entries(config.colors)) {
       console.log(`Generating mesh for color ${hexColor} (${colorConfig.color})...`);
 
@@ -75,11 +87,30 @@ export async function processImageTo3MF(
         color: hexColor,
         filamentName: colorConfig.color,
       });
+
+      // Add to debug SCAD
+      const rgb = hexToRgb(hexColor);
+      const zOffset = config.options.backplane ? config.options.backplane.height : 0;
+      debugScadParts.push(`// ${colorConfig.color} (${hexColor})
+color([${rgb.r / 255}, ${rgb.g / 255}, ${rgb.b / 255}]) translate([0, 0, ${zOffset}])
+  surface(file = "color_${hexColor.replace('#', '')}_mask.png", center = false, invert = true);
+`);
+      colorIndex++;
     }
+
+    // Create debug.scad file
+    const debugScadPath = path.join(path.dirname(outputFilepath), 'debug.scad');
+    const debugScad = `// Debug visualization of all color masks
+// This shows how all the color layers are positioned
+
+${debugScadParts.join('\n')}
+`;
+    fs.writeFileSync(debugScadPath, debugScad, 'utf-8');
+    console.log(`Generated ${debugScadPath} for debugging`);
 
     // Combine all meshes into a single 3MF file
     console.log('Combining meshes into final 3MF...');
-    await createCombined3MF(coloredObjects, outputFilepath);
+    await createCombined3MF(coloredObjects, outputFilepath, imageWidthMm, imageHeightMm);
 
     console.log(`Generated ${outputFilepath}`);
   } finally {

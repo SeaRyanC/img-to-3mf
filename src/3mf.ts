@@ -97,7 +97,9 @@ async function createAdditionalThumbnails(tempDir: string): Promise<void> {
 
 export async function createCombined3MF(
   objects: ColoredObject[],
-  outputPath: string
+  outputPath: string,
+  imageWidth: number,
+  imageHeight: number
 ): Promise<void> {
   const tempDir = path.join(path.dirname(outputPath), `temp_${Date.now()}`);
   fs.mkdirSync(tempDir, { recursive: true });
@@ -144,15 +146,15 @@ export async function createCombined3MF(
     }
 
     // Create main 3dmodel.model
-    const mainModel = generateMainModel(objectReferences);
+    const mainModel = generateMainModel(objectReferences, imageWidth, imageHeight);
     fs.writeFileSync(path.join(tempDir, '3D', '3dmodel.model'), mainModel, 'utf-8');
 
     // Create model_settings.config with color information
     const modelSettings = generateModelSettings(objects, objectReferences);
     fs.writeFileSync(path.join(tempDir, 'Metadata', 'model_settings.config'), modelSettings, 'utf-8');
 
-    // Create project_settings.config with filament colors
-    const projectSettings = generateProjectSettings(objects);
+    // Create project_settings.config with filament colors (no custom presets)
+    const projectSettings = generateProjectSettings();
     fs.writeFileSync(path.join(tempDir, 'Metadata', 'project_settings.config'), projectSettings, 'utf-8');
 
     // Create cut_information.xml
@@ -239,7 +241,7 @@ function generateObjectModel(mesh: MeshObject, objectId: number, uuid: string): 
   return xml;
 }
 
-function generateMainModel(objectReferences: { id: number; uuid: string; path: string }[]): string {
+function generateMainModel(objectReferences: { id: number; uuid: string; path: string }[], imageWidth: number, imageHeight: number): string {
   const buildUuid = "2c7c17d8-22b5-4d84-8835-1976022ea369";
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD format
@@ -282,9 +284,12 @@ function generateMainModel(objectReferences: { id: number; uuid: string; path: s
  <build p:UUID="${buildUuid}">
 `;
 
-  // All objects should be at the same position since they're different color layers of the same image
-  const baseX = 100;
-  const baseY = 100;
+  // Center the object on the build plate (250x250mm)
+  // Calculate position to center the image
+  const buildPlateWidth = 250;
+  const buildPlateHeight = 250;
+  const baseX = (buildPlateWidth - imageWidth) / 2;
+  const baseY = (buildPlateHeight - imageHeight) / 2;
   const baseZ = 0;
   
   for (let i = 0; i < objectReferences.length; i++) {
@@ -369,12 +374,10 @@ function generateModelSettings(
   return xml;
 }
 
-function generateProjectSettings(objects: ColoredObject[]): string {
-  const filamentColors = objects.map(obj => obj.color);
-  
-  const settings = {
-    filament_colour: filamentColors,
-  };
+function generateProjectSettings(): string {
+  // Return minimal settings without custom filament settings
+  // This avoids triggering the "customized filament or printer presets" warning
+  const settings = {};
 
   return JSON.stringify(settings, null, 2);
 }
