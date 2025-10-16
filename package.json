@@ -1,0 +1,31 @@
+{
+  "name": "img-to-3mf",
+  "version": "1.0.0",
+  "description": "Convert images to 3MF files for multi-color 3D printing",
+  "main": "dist/index.js",
+  "bin": {
+    "img-to-3mf": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["3mf", "3d-printing", "image", "converter", "bambu"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^24.7.2",
+    "@types/unzipper": "^0.10.11",
+    "typescript": "5.9"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "jimp": "^1.6.0",
+    "jsonc-parser": "^3.3.1",
+    "sharp": "^0.34.4",
+    "unzipper": "^0.12.3",
+    "uuid": "^13.0.0"
+  }
+}
