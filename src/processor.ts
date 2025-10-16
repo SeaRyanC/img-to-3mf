@@ -85,7 +85,7 @@ export async function processImageTo3MF(
   } finally {
     // Clean up temporary directory
     if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      // fs.rmSync(tempDir, { recursive: true, force: true });
     }
   }
 }

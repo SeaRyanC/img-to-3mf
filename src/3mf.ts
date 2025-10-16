@@ -39,7 +39,7 @@ export async function parse3MF(filepath: string): Promise<MeshObject> {
     return mesh;
   } finally {
     // Clean up temp directory
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    // fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -132,7 +132,7 @@ export async function createCombined3MF(
     await createZipArchive(tempDir, outputPath);
   } finally {
     // Clean up temp directory
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    // fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 
