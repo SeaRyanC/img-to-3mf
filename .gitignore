@@ -9,3 +9,5 @@ dist/
 *.jpeg
 *.jsonc
 !Two\ Cubes.3mf
+!otter.png
+temp_*/
