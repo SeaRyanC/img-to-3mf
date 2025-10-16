@@ -83,15 +83,14 @@ function floodFillBackground(
 
   const queue: [number, number][] = [];
 
-  // Start flood fill from all edges
-  for (let x = 0; x < width; x++) {
-    queue.push([x, 0]);
-    queue.push([x, height - 1]);
-  }
-  for (let y = 0; y < height; y++) {
-    queue.push([0, y]);
-    queue.push([width - 1, y]);
-  }
+  // Start from top-left corner
+  const startX = 0;
+  const startY = 0;
+  const startPixel = intToRGBA(image.getPixelColor(startX, startY));
+  const startHex = rgbToHex(startPixel.r, startPixel.g, startPixel.b);
+  const startColor = colorMap.get(startHex) || startHex;
+
+  queue.push([startX, startY]);
 
   while (queue.length > 0) {
     const [x, y] = queue.shift()!;
@@ -105,14 +104,9 @@ function floodFillBackground(
     const hex = rgbToHex(pixel.r, pixel.g, pixel.b);
     const clusterColor = colorMap.get(hex) || hex;
 
-    // Get the starting pixel color
-    const startPixel = intToRGBA(image.getPixelColor(queue[0]?.[0] || x, queue[0]?.[1] || y));
-    const startHex = rgbToHex(startPixel.r, startPixel.g, startPixel.b);
-    const startCluster = colorMap.get(startHex) || startHex;
-
-    // If same color as starting point, mark as background and continue flood fill
-    if (queue.length === 0 || clusterColor === startCluster || 
-        colorDistance(hexToRgb(clusterColor), hexToRgb(startCluster)) <= COLOR_SIMILARITY_THRESHOLD) {
+    // If same color as starting point (within threshold), mark as background and continue flood fill
+    if (clusterColor === startColor || 
+        colorDistance(hexToRgb(clusterColor), hexToRgb(startColor)) <= COLOR_SIMILARITY_THRESHOLD) {
       background[y][x] = true;
 
       // Add neighbors to queue
