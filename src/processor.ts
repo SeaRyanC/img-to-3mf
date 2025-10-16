@@ -66,13 +66,14 @@ color([0, 0, 0]) translate([0, 0, 0])
 `);
     }
 
-    // Process each color
+    // Process each color in order, ensuring no pixel overlap
+    const usedPixels = new Set<string>();
     let colorIndex = 0;
     for (const [hexColor, colorConfig] of Object.entries(config.colors)) {
       console.log(`Generating mesh for color ${hexColor} (${colorConfig.color})...`);
 
-      // Create color mask
-      const mask = await createColorMask(processedImage, hexColor);
+      // Create color mask, excluding pixels already used by previous colors
+      const mask = await createColorMask(processedImage, hexColor, usedPixels);
 
       // Generate 3MF for this color using OpenSCAD
       const color3mfPath = path.join(tempDir, `color_${hexColor.replace('#', '')}.3mf`);

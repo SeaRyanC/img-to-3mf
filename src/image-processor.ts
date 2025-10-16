@@ -243,17 +243,25 @@ export async function processImage(filepath: string): Promise<ProcessedImage> {
 }
 
 // Create monochrome PNG mask for a specific color
+// Excludes pixels already claimed by previous masks (to prevent overlapping geometry)
 export async function createColorMask(
   processedImage: ProcessedImage,
-  color: string
+  color: string,
+  usedPixels?: Set<string>
 ): Promise<any> {
   const { width, height, pixelColors } = processedImage;
   const mask = new Jimp({ width, height, color: 0x000000FF }); // Black background
+  
+  if (!usedPixels) {
+    usedPixels = new Set();
+  }
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      if (pixelColors[y][x] === color) {
+      const key = `${x},${y}`;
+      if (pixelColors[y][x] === color && !usedPixels.has(key)) {
         mask.setPixelColor(0xFFFFFFFF, x, y); // White for this color
+        usedPixels.add(key);
       }
     }
   }
