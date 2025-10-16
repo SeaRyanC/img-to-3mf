@@ -4,6 +4,7 @@ import archiver from 'archiver';
 import unzipper from 'unzipper';
 import { v4 as uuidv4 } from 'uuid';
 import { hexToRgb } from './colors';
+import { Jimp } from 'jimp';
 
 export interface MeshObject {
   vertices: { x: number; y: number; z: number }[];
@@ -71,6 +72,18 @@ function parseModelXml(xml: string): MeshObject {
   return { vertices, triangles };
 }
 
+// Create thumbnail images for Bambu Studio compatibility
+async function createThumbnails(tempDir: string): Promise<void> {
+  // Create a simple grey placeholder thumbnail (matching Bambu Studio style)
+  // Middle size: 256x256
+  const middleThumb = new Jimp({ width: 256, height: 256, color: 0x808080FF });
+  await middleThumb.write(path.resolve(path.join(tempDir, 'Metadata', 'plate_1.png')) as `${string}.${string}`);
+  
+  // Small size: 96x96
+  const smallThumb = new Jimp({ width: 96, height: 96, color: 0x808080FF });
+  await smallThumb.write(path.resolve(path.join(tempDir, 'Metadata', 'plate_1_small.png')) as `${string}.${string}`);
+}
+
 export async function createCombined3MF(
   objects: ColoredObject[],
   outputPath: string
@@ -85,6 +98,9 @@ export async function createCombined3MF(
     fs.mkdirSync(path.join(tempDir, '3D', '_rels'), { recursive: true });
     fs.mkdirSync(path.join(tempDir, '_rels'), { recursive: true });
     fs.mkdirSync(path.join(tempDir, 'Metadata'), { recursive: true });
+
+    // Create thumbnail images for Bambu Studio compatibility
+    await createThumbnails(tempDir);
 
     // Create [Content_Types].xml
     const contentTypes = generateContentTypes();
@@ -141,6 +157,7 @@ function generateContentTypes(): string {
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+ <Default Extension="png" ContentType="image/png"/>
 </Types>`;
 }
 
@@ -148,6 +165,9 @@ function generateRootRels(): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
  <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+ <Relationship Target="/Metadata/plate_1.png" Id="rel-2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail"/>
+ <Relationship Target="/Metadata/plate_1.png" Id="rel-4" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-middle"/>
+ <Relationship Target="/Metadata/plate_1_small.png" Id="rel-5" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-small"/>
 </Relationships>`;
 }
 
