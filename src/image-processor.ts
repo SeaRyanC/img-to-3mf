@@ -165,9 +165,11 @@ export async function processImage(filepath: string): Promise<ProcessedImage> {
 
   // Step 6: Get modal colors excluding background
   const foregroundCounts = new Map<string, number>();
+  let totalForegroundPixels = 0;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (!backgroundMask[y][x]) {
+        totalForegroundPixels++;
         const pixel = intToRGBA(image.getPixelColor(x, y));
         const hex = rgbToHex(pixel.r, pixel.g, pixel.b);
         const clusterColor = colorMap.get(hex) || hex;
@@ -176,7 +178,12 @@ export async function processImage(filepath: string): Promise<ProcessedImage> {
     }
   }
 
+  // Filter out colors with very few pixels (less than 0.1% of foreground)
+  // This removes single-pixel artifacts and noise
+  const minPixelCount = Math.max(10, totalForegroundPixels * 0.001);
+  
   const modalColors = Array.from(foregroundCounts.entries())
+    .filter(([_, count]) => count >= minPixelCount)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 16)
     .map(([color]) => color);

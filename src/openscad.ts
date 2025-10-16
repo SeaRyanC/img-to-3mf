@@ -16,16 +16,19 @@ export function generateOpenSCADScript(options: OpenSCADOptions): string {
   
   // Scale factor to convert pixels to millimeters (1 pixel = 0.2mm is a reasonable default)
   const scale = 0.2;
+  
+  // The surface function uses brightness (0-255) as Z coordinate
+  // We need to scale Z to get the desired height in mm
+  // For a white pixel (255), we want it to be at the specified height
+  const zScale = height / 255;
 
-  // The surface function expects a heightmap where brightness controls Z
-  // We'll create a heightmap where white = max height
   return `
 // Auto-generated OpenSCAD script for image-to-3MF conversion
 // Image dimensions: ${imageWidth}x${imageHeight} pixels
 // Height: ${height}mm
-// Scale: ${scale}mm per pixel
+// Scale: ${scale}mm per pixel in XY, ${zScale}mm per brightness unit in Z
 
-scale([${scale}, ${scale}, 1]) {
+scale([${scale}, ${scale}, ${zScale}]) {
   surface(file = "${maskPath.replace(/\\/g, '/')}", center = true, convexity = 10);
 }
 `;

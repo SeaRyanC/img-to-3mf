@@ -47,8 +47,8 @@ function parseModelXml(xml: string): MeshObject {
   const vertices: { x: number; y: number; z: number }[] = [];
   const triangles: { v1: number; v2: number; v3: number }[] = [];
 
-  // Simple XML parsing for vertices
-  const vertexRegex = /<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"\/>/g;
+  // Simple XML parsing for vertices (handles both /> and  />)
+  const vertexRegex = /<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"\s*\/>/g;
   let match;
   while ((match = vertexRegex.exec(xml)) !== null) {
     vertices.push({
@@ -58,8 +58,8 @@ function parseModelXml(xml: string): MeshObject {
     });
   }
 
-  // Simple XML parsing for triangles
-  const triangleRegex = /<triangle v1="([^"]+)" v2="([^"]+)" v3="([^"]+)"\/>/g;
+  // Simple XML parsing for triangles (handles both /> and  />)
+  const triangleRegex = /<triangle v1="([^"]+)" v2="([^"]+)" v3="([^"]+)"\s*\/>/g;
   while ((match = triangleRegex.exec(xml)) !== null) {
     triangles.push({
       v1: parseInt(match[1]),
@@ -199,10 +199,22 @@ function generateObjectModel(mesh: MeshObject, objectId: number, uuid: string): 
 
 function generateMainModel(objectReferences: { id: number; uuid: string; path: string }[]): string {
   const buildUuid = uuidv4();
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+  
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">
  <metadata name="Application">img-to-3mf</metadata>
  <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <metadata name="Copyright"></metadata>
+ <metadata name="CreationDate">${dateStr}</metadata>
+ <metadata name="Description"></metadata>
+ <metadata name="Designer"></metadata>
+ <metadata name="DesignerCover"></metadata>
+ <metadata name="License"></metadata>
+ <metadata name="ModificationDate">${dateStr}</metadata>
+ <metadata name="Origin"></metadata>
+ <metadata name="Title"></metadata>
  <resources>
 `;
 
