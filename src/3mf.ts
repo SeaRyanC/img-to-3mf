@@ -82,13 +82,6 @@ async function createThumbnails(tempDir: string): Promise<void> {
   // Small size: 96x96
   const smallThumb = new Jimp({ width: 96, height: 96, color: 0x808080FF });
   await smallThumb.write(path.resolve(path.join(tempDir, 'Metadata', 'plate_1_small.png')) as `${string}.${string}`);
-  
-  // Additional thumbnails for Bambu Studio (top and pick views)
-  const topThumb = new Jimp({ width: 64, height: 64, color: 0x808080FF });
-  await topThumb.write(path.resolve(path.join(tempDir, 'Metadata', 'top_1.png')) as `${string}.${string}`);
-  
-  const pickThumb = new Jimp({ width: 64, height: 64, color: 0x808080FF });
-  await pickThumb.write(path.resolve(path.join(tempDir, 'Metadata', 'pick_1.png')) as `${string}.${string}`);
 }
 
 export async function createCombined3MF(
@@ -125,14 +118,13 @@ export async function createCombined3MF(
     const objectReferences: { id: number; uuid: string; path: string }[] = [];
     for (let i = 0; i < objects.length; i++) {
       const obj = objects[i];
-      const objectId = i * 2 + 1; // 1, 3, 5, ... (internal object IDs)
-      const fileNumber = i + 1; // 1, 2, 3, ... (file names)
+      const objectId = i * 2 + 1; // 1, 3, 5, ...
       const uuid = uuidv4();
-      const objectPath = `/3D/Objects/object_${fileNumber}.model`;
+      const objectPath = `/3D/Objects/object_${objectId}.model`;
       
       const objectModel = generateObjectModel(obj.mesh, objectId, uuid);
       fs.writeFileSync(
-        path.join(tempDir, '3D', 'Objects', `object_${fileNumber}.model`),
+        path.join(tempDir, '3D', 'Objects', `object_${objectId}.model`),
         objectModel,
         'utf-8'
       );
@@ -242,8 +234,6 @@ function generateMainModel(objectReferences: { id: number; uuid: string; path: s
  <metadata name="License"></metadata>
  <metadata name="ModificationDate">${dateStr}</metadata>
  <metadata name="Origin"></metadata>
- <metadata name="Thumbnail_Middle">/Metadata/plate_1.png</metadata>
- <metadata name="Thumbnail_Small">/Metadata/plate_1_small.png</metadata>
  <metadata name="Title"></metadata>
  <resources>
 `;
@@ -310,32 +300,6 @@ function generateModelSettings(
   </object>
 `;
   }
-
-  // Add plate section for Bambu Studio compatibility
-  xml += `  <plate>
-    <metadata key="plater_id" value="1"/>
-    <metadata key="plater_name" value=""/>
-    <metadata key="locked" value="false"/>
-    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>
-    <metadata key="top_file" value="Metadata/top_1.png"/>
-    <metadata key="pick_file" value="Metadata/pick_1.png"/>
-`;
-
-  // Add model_instance for each object
-  for (let i = 0; i < objects.length; i++) {
-    const wrapperId = objectReferences[i].id + 1;
-    const identifyId = 99 + i * 20; // Generate unique identify_ids (99, 119, 139, 159...)
-    
-    xml += `    <model_instance>
-      <metadata key="object_id" value="${wrapperId}"/>
-      <metadata key="instance_id" value="0"/>
-      <metadata key="identify_id" value="${identifyId}"/>
-    </model_instance>
-`;
-  }
-
-  xml += `  </plate>
-`;
 
   xml += `</config>`;
   return xml;
