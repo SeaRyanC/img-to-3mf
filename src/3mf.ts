@@ -84,6 +84,17 @@ async function createThumbnails(tempDir: string): Promise<void> {
   await smallThumb.write(path.resolve(path.join(tempDir, 'Metadata', 'plate_1_small.png')) as `${string}.${string}`);
 }
 
+// Create additional thumbnails required by Bambu Studio
+async function createAdditionalThumbnails(tempDir: string): Promise<void> {
+  // Create top_1.png (256x256)
+  const topThumb = new Jimp({ width: 256, height: 256, color: 0x808080FF });
+  await topThumb.write(path.resolve(path.join(tempDir, 'Metadata', 'top_1.png')) as `${string}.${string}`);
+  
+  // Create pick_1.png (256x256)
+  const pickThumb = new Jimp({ width: 256, height: 256, color: 0x808080FF });
+  await pickThumb.write(path.resolve(path.join(tempDir, 'Metadata', 'pick_1.png')) as `${string}.${string}`);
+}
+
 export async function createCombined3MF(
   objects: ColoredObject[],
   outputPath: string
@@ -114,11 +125,11 @@ export async function createCombined3MF(
     const modelRels = generate3DModelRels(objects.length);
     fs.writeFileSync(path.join(tempDir, '3D', '_rels', '3dmodel.model.rels'), modelRels, 'utf-8');
 
-    // Create object model files
+    // Create object model files - use sequential IDs (1, 2, 3, 4)
     const objectReferences: { id: number; uuid: string; path: string }[] = [];
     for (let i = 0; i < objects.length; i++) {
       const obj = objects[i];
-      const objectId = i * 2 + 1; // 1, 3, 5, ...
+      const objectId = i + 1; // 1, 2, 3, 4 (sequential)
       const uuid = uuidv4();
       const objectPath = `/3D/Objects/object_${objectId}.model`;
       
@@ -143,6 +154,17 @@ export async function createCombined3MF(
     // Create project_settings.config with filament colors
     const projectSettings = generateProjectSettings(objects);
     fs.writeFileSync(path.join(tempDir, 'Metadata', 'project_settings.config'), projectSettings, 'utf-8');
+
+    // Create cut_information.xml
+    const cutInfo = generateCutInformation(objectReferences);
+    fs.writeFileSync(path.join(tempDir, 'Metadata', 'cut_information.xml'), cutInfo, 'utf-8');
+
+    // Create slice_info.config
+    const sliceInfo = generateSliceInfo();
+    fs.writeFileSync(path.join(tempDir, 'Metadata', 'slice_info.config'), sliceInfo, 'utf-8');
+
+    // Create additional thumbnail files
+    await createAdditionalThumbnails(tempDir);
 
     // Create ZIP archive
     await createZipArchive(tempDir, outputPath);
@@ -177,7 +199,7 @@ function generate3DModelRels(objectCount: number): string {
 `;
   
   for (let i = 0; i < objectCount; i++) {
-    const objectId = i * 2 + 1;
+    const objectId = i + 1; // Sequential: 1, 2, 3, 4
     rels += ` <Relationship Target="/3D/Objects/object_${objectId}.model" Id="rel-${i + 1}" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n`;
   }
 
@@ -218,31 +240,35 @@ function generateObjectModel(mesh: MeshObject, objectId: number, uuid: string): 
 }
 
 function generateMainModel(objectReferences: { id: number; uuid: string; path: string }[]): string {
-  const buildUuid = uuidv4();
+  const buildUuid = "2c7c17d8-22b5-4d84-8835-1976022ea369";
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD format
   
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">
- <metadata name="Application">img-to-3mf</metadata>
+ <metadata name="Application">BambuStudio-01.09.01.67</metadata>
  <metadata name="BambuStudio:3mfVersion">1</metadata>
  <metadata name="Copyright"></metadata>
  <metadata name="CreationDate">${dateStr}</metadata>
  <metadata name="Description"></metadata>
  <metadata name="Designer"></metadata>
  <metadata name="DesignerCover"></metadata>
+ <metadata name="DesignerUserId">4049112567</metadata>
  <metadata name="License"></metadata>
  <metadata name="ModificationDate">${dateStr}</metadata>
  <metadata name="Origin"></metadata>
+ <metadata name="Thumbnail_Middle">/Metadata/plate_1.png</metadata>
+ <metadata name="Thumbnail_Small">/Metadata/plate_1_small.png</metadata>
  <metadata name="Title"></metadata>
  <resources>
 `;
 
+  // Use even IDs for wrapper objects: 2, 4, 6, 8
   for (let i = 0; i < objectReferences.length; i++) {
     const obj = objectReferences[i];
-    const wrapperId = obj.id + 1;
-    const wrapperUuid = uuidv4();
-    const componentUuid = uuidv4();
+    const wrapperId = (i + 1) * 2; // 2, 4, 6, 8
+    const wrapperUuid = `0000000${i + 1}-61cb-4c03-9d28-80fed5dfa1dc`;
+    const componentUuid = `000${i + 1}0000-b206-40ff-9872-83e8017abed1`;
 
     xml += `  <object id="${wrapperId}" p:UUID="${wrapperUuid}" type="model">
    <components>
@@ -262,9 +288,8 @@ function generateMainModel(objectReferences: { id: number; uuid: string; path: s
   const baseZ = 0;
   
   for (let i = 0; i < objectReferences.length; i++) {
-    const obj = objectReferences[i];
-    const wrapperId = obj.id + 1;
-    const itemUuid = uuidv4();
+    const wrapperId = (i + 1) * 2; // 2, 4, 6, 8
+    const itemUuid = `0000000${wrapperId}-b1ec-4553-aec9-835e5b724bb4`;
 
     xml += `  <item objectid="${wrapperId}" p:UUID="${itemUuid}" transform="1 0 0 0 1 0 0 0 1 ${baseX} ${baseY} ${baseZ}" printable="1"/>\n`;
   }
@@ -284,8 +309,8 @@ function generateModelSettings(
 `;
 
   for (let i = 0; i < objects.length; i++) {
-    const wrapperId = objectReferences[i].id + 1;
-    const objectId = objectReferences[i].id;
+    const wrapperId = (i + 1) * 2; // 2, 4, 6, 8
+    const objectId = objectReferences[i].id; // 1, 2, 3, 4
     const extruder = i + 1; // Extruder IDs start at 1
     const colorName = objects[i].filamentName || `Color${i + 1}`;
 
@@ -295,13 +320,52 @@ function generateModelSettings(
     <part id="${objectId}" subtype="normal_part">
       <metadata key="name" value="${colorName}"/>
       <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>
+      <metadata key="source_file" value=""/>
+      <metadata key="source_object_id" value="${i}"/>
+      <metadata key="source_volume_id" value="0"/>
+      <metadata key="source_offset_x" value="0"/>
+      <metadata key="source_offset_y" value="0"/>
+      <metadata key="source_offset_z" value="0"/>
       <mesh_stat edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
     </part>
   </object>
 `;
   }
 
-  xml += `</config>`;
+  // Add plate section
+  xml += `  <plate>
+    <metadata key="plater_id" value="1"/>
+    <metadata key="plater_name" value=""/>
+    <metadata key="locked" value="false"/>
+    <metadata key="thumbnail_file" value="Metadata/plate_1.png"/>
+    <metadata key="top_file" value="Metadata/top_1.png"/>
+    <metadata key="pick_file" value="Metadata/pick_1.png"/>
+`;
+
+  for (let i = 0; i < objects.length; i++) {
+    const wrapperId = (i + 1) * 2; // 2, 4, 6, 8
+    const identifyId = 99 + (i * 20); // 99, 119, 139, 159
+
+    xml += `    <model_instance>
+      <metadata key="object_id" value="${wrapperId}"/>
+      <metadata key="instance_id" value="0"/>
+      <metadata key="identify_id" value="${identifyId}"/>
+    </model_instance>
+`;
+  }
+
+  xml += `  </plate>
+  <assemble>
+`;
+
+  for (let i = 0; i < objects.length; i++) {
+    const wrapperId = (i + 1) * 2; // 2, 4, 6, 8
+    xml += `   <assemble_item object_id="${wrapperId}" instance_id="0" transform="1 0 0 0 1 0 0 0 1 100 100 0" offset="0 0 0" />
+`;
+  }
+
+  xml += `  </assemble>
+</config>`;
   return xml;
 }
 
@@ -313,6 +377,32 @@ function generateProjectSettings(objects: ColoredObject[]): string {
   };
 
   return JSON.stringify(settings, null, 2);
+}
+
+function generateCutInformation(objectReferences: { id: number; uuid: string }[]): string {
+  let xml = `<?xml version="1.0" encoding="utf-8"?>
+<objects>
+`;
+  
+  for (const obj of objectReferences) {
+    xml += ` <object id="${obj.id}">
+  <cut_id id="0" check_sum="1" connectors_cnt="0"/>
+ </object>
+`;
+  }
+  
+  xml += `</objects>`;
+  return xml;
+}
+
+function generateSliceInfo(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <header>
+    <header_item key="X-BBL-Client-Type" value="slicer"/>
+    <header_item key="X-BBL-Client-Version" value="01.09.01.67"/>
+  </header>
+</config>`;
 }
 
 async function createZipArchive(sourceDir: string, outputPath: string): Promise<void> {
