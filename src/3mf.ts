@@ -236,14 +236,17 @@ function generateMainModel(objectReferences: { id: number; uuid: string; path: s
  <build p:UUID="${buildUuid}">
 `;
 
-  let xOffset = 0;
+  // All objects should be at the same position since they're different color layers of the same image
+  const baseX = 100;
+  const baseY = 100;
+  const baseZ = 0;
+  
   for (let i = 0; i < objectReferences.length; i++) {
     const obj = objectReferences[i];
     const wrapperId = obj.id + 1;
     const itemUuid = uuidv4();
 
-    xml += `  <item objectid="${wrapperId}" p:UUID="${itemUuid}" transform="1 0 0 0 1 0 0 0 1 ${100 + xOffset} 100 0" printable="1"/>\n`;
-    xOffset += 30; // Space objects apart
+    xml += `  <item objectid="${wrapperId}" p:UUID="${itemUuid}" transform="1 0 0 0 1 0 0 0 1 ${baseX} ${baseY} ${baseZ}" printable="1"/>\n`;
   }
 
   xml += ` </build>
