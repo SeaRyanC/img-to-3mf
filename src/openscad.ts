@@ -14,22 +14,24 @@ export interface OpenSCADOptions {
 export function generateOpenSCADScript(options: OpenSCADOptions): string {
   const { maskPath, height, imageWidth, imageHeight } = options;
   
-  // Scale factor to convert pixels to millimeters (1 pixel = 0.2mm is a reasonable default)
-  const scale = 0.2;
+  // Calculate scale so the longest edge is 100mm
+  const longestEdge = Math.max(imageWidth, imageHeight);
+  const scale = 100 / longestEdge;
+  
+  // The surface function uses brightness (0-255) as Z coordinate
+  // We need to scale Z to get the desired height in mm
+  // For a white pixel (255), we want it to be at the specified height
+  const zScale = height / 255;
 
   return `
 // Auto-generated OpenSCAD script for image-to-3MF conversion
 // Image dimensions: ${imageWidth}x${imageHeight} pixels
+// Longest edge: ${longestEdge} pixels = 100mm
 // Height: ${height}mm
-// Scale: ${scale}mm per pixel in XY, ${height}mm tall
+// Scale: ${scale.toFixed(6)}mm per pixel in XY, ${zScale.toFixed(6)}mm per brightness unit in Z
 
-scale([${scale}, ${scale}, ${height}])
-linear_extrude(1)
-projection()
-intersection() {
-    translate([0, 0, -2])
-    surface(file = "${maskPath.replace(/\\/g, '/')}", center = true, convexity = 10);
-    cube([10000, 10000, 1], center = true);
+scale([${scale}, ${scale}, ${zScale}]) {
+  surface(file = "${maskPath.replace(/\\/g, '/')}", center = false, convexity = 10);
 }
 `;
 }
