@@ -29,7 +29,7 @@ export function generateOpenSCADScript(options: OpenSCADOptions): string {
 // Scale: ${scale}mm per pixel in XY, ${zScale}mm per brightness unit in Z
 
 scale([${scale}, ${scale}, ${zScale}]) {
-  surface(file = "${maskPath.replace(/\\/g, '/')}", center = true, convexity = 10);
+  surface(file = "${maskPath.replace(/\\/g, '/')}", center = false, convexity = 10);
 }
 `;
 }

@@ -264,12 +264,13 @@ function generateModelSettings(
     const wrapperId = objectReferences[i].id + 1;
     const objectId = objectReferences[i].id;
     const extruder = i + 1; // Extruder IDs start at 1
+    const colorName = objects[i].filamentName || `Color${i + 1}`;
 
     xml += `  <object id="${wrapperId}">
-    <metadata key="name" value="Color${i + 1}"/>
+    <metadata key="name" value="${colorName}"/>
     <metadata key="extruder" value="${extruder}"/>
     <part id="${objectId}" subtype="normal_part">
-      <metadata key="name" value="Color${i + 1}"/>
+      <metadata key="name" value="${colorName}"/>
       <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>
       <mesh_stat edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>
     </part>
