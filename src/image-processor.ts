@@ -24,8 +24,8 @@ export async function loadImage(filepath: string): Promise<any> {
 
 export async function analyzeImage(filepath: string): Promise<ImageInfo> {
   const image = await loadImage(filepath);
-  const width = image.getWidth();
-  const height = image.getHeight();
+  const width = image.bitmap.width;
+  const height = image.bitmap.height;
   const colorCounts = new Map<string, number>();
 
   for (let y = 0; y < height; y++) {
@@ -76,8 +76,8 @@ function floodFillBackground(
   image: any,
   colorMap: Map<string, string>
 ): boolean[][] {
-  const width = image.getWidth();
-  const height = image.getHeight();
+  const width = image.bitmap.width;
+  const height = image.bitmap.height;
   const visited = Array.from({ length: height }, () => Array(width).fill(false));
   const background = Array.from({ length: height }, () => Array(width).fill(false));
 
@@ -128,8 +128,8 @@ function floodFillBackground(
 
 export async function processImage(filepath: string): Promise<ProcessedImage> {
   const image = await loadImage(filepath);
-  const width = image.getWidth();
-  const height = image.getHeight();
+  const width = image.bitmap.width;
+  const height = image.bitmap.height;
 
   // Step 1: Collect all colors
   const colorCounts = new Map<string, number>();

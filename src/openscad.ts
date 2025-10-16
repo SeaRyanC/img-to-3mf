@@ -16,13 +16,17 @@ export function generateOpenSCADScript(options: OpenSCADOptions): string {
   
   // Scale factor to convert pixels to millimeters (1 pixel = 0.2mm is a reasonable default)
   const scale = 0.2;
-  const scaleX = imageWidth * scale;
-  const scaleY = imageHeight * scale;
 
+  // The surface function expects a heightmap where brightness controls Z
+  // We'll create a heightmap where white = max height
   return `
 // Auto-generated OpenSCAD script for image-to-3MF conversion
-scale([${scaleX}, ${scaleY}, ${height}]) {
-  surface(file = "${maskPath.replace(/\\/g, '/')}", center = true, invert = true);
+// Image dimensions: ${imageWidth}x${imageHeight} pixels
+// Height: ${height}mm
+// Scale: ${scale}mm per pixel
+
+scale([${scale}, ${scale}, 1]) {
+  surface(file = "${maskPath.replace(/\\/g, '/')}", center = true, convexity = 10);
 }
 `;
 }
@@ -33,31 +37,48 @@ export async function createMeshWithOpenSCAD(
   outputPath: string,
   tempDir: string
 ): Promise<void> {
-  // Save the mask as PNG
+  // Convert the mask to a heightmap
+  // White pixels (0xFFFFFFFF) should be at the desired height
+  // Black pixels (0x000000FF) should be at 0 height
+  
+  const width = mask.bitmap.width;
+  const heightPx = mask.bitmap.height;
+  
+  // For the heightmap, we scale the height to 0-100 range for OpenSCAD
+  // Then OpenSCAD will scale it by our height value
+  // Actually, surface() uses the brightness (0-255) directly as Z coordinate
+  // We need to create a grayscale heightmap
+  
+  // Save the mask as PNG - it's already a heightmap (white = high, black = low)
   const maskFilename = `mask_${Date.now()}.png`;
-  const maskPath = path.join(tempDir, maskFilename);
-  await mask.writeAsync(maskPath);
+  const maskPath = path.resolve(path.join(tempDir, maskFilename));
+  await mask.write(maskPath);
 
   // Generate OpenSCAD script
   const scadFilename = `script_${Date.now()}.scad`;
-  const scadPath = path.join(tempDir, scadFilename);
+  const scadPath = path.resolve(path.join(tempDir, scadFilename));
 
   const script = generateOpenSCADScript({
     maskPath,
     height,
     outputPath,
-    imageWidth: mask.getWidth(),
-    imageHeight: mask.getHeight(),
+    imageWidth: width,
+    imageHeight: heightPx,
   });
 
   fs.writeFileSync(scadPath, script, 'utf-8');
 
   // Run OpenSCAD to generate 3MF
   try {
-    const command = `openscad -o "${outputPath}" "${scadPath}"`;
-    execSync(command, { stdio: 'pipe', timeout: 60000 });
+    const resolvedOutputPath = path.resolve(outputPath);
+    const command = `openscad -o "${resolvedOutputPath}" "${scadPath}"`;
+    console.log(`Running OpenSCAD: ${command}`);
+    const output = execSync(command, { stdio: 'pipe', timeout: 120000, encoding: 'utf-8' });
+    console.log(`OpenSCAD output: ${output}`);
   } catch (error: any) {
-    throw new Error(`OpenSCAD execution failed: ${error.message}`);
+    const stderr = error.stderr ? error.stderr.toString() : 'No stderr';
+    const stdout = error.stdout ? error.stdout.toString() : 'No stdout';
+    throw new Error(`OpenSCAD execution failed: ${error.message}\nStdout: ${stdout}\nStderr: ${stderr}`);
   }
 
   // Clean up temporary files
