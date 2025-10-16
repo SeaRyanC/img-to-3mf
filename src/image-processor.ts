@@ -258,7 +258,63 @@ export async function createColorMask(
     }
   }
 
+  removeSinglePixelArtifacts(mask);
+
   return mask;
+}
+
+// Post-process mask to remove single-pixel artifacts
+// Any pixel that differs from all 8 neighbors is replaced with neighbor color
+function removeSinglePixelArtifacts(mask: any): void {
+  const width = mask.bitmap.width;
+  const height = mask.bitmap.height;
+  const { intToRGBA } = require('@jimp/utils');
+  
+  // Create a copy of pixel values to avoid modifying while reading
+  const pixels: boolean[][] = Array.from({ length: height }, () => Array(width).fill(false));
+  
+  // Read current pixel values (true = white/foreground, false = black/background)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const color = mask.getPixelColor(x, y);
+      const rgba = intToRGBA(color);
+      pixels[y][x] = rgba.r > 128; // White is foreground
+    }
+  }
+  
+  // Check each pixel and fix single-pixel artifacts
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const currentPixel = pixels[y][x];
+      
+      // Check all 8 neighbors
+      const neighbors: boolean[] = [];
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue; // Skip center pixel
+          
+          const nx = x + dx;
+          const ny = y + dy;
+          
+          // If neighbor is out of bounds, treat it as background (false)
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+            neighbors.push(false);
+          } else {
+            neighbors.push(pixels[ny][nx]);
+          }
+        }
+      }
+      
+      // If all neighbors have the same value and it's different from current pixel,
+      // this is a single-pixel artifact
+      const allSame = neighbors.every(n => n === neighbors[0]);
+      if (allSame && neighbors[0] !== currentPixel) {
+        // Replace with neighbor color
+        const newColor = neighbors[0] ? 0xFFFFFFFF : 0x000000FF;
+        mask.setPixelColor(newColor, x, y);
+      }
+    }
+  }
 }
 
 // Create mask for any pixel (for backplane)
@@ -275,6 +331,8 @@ export async function createBackplaneMask(
       }
     }
   }
+
+  removeSinglePixelArtifacts(mask);
 
   return mask;
 }

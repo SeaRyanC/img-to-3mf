@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">
+ <metadata name="Application">img-to-3mf</metadata>
+ <metadata name="BambuStudio:3mfVersion">1</metadata>
+ <metadata name="Copyright"></metadata>
+ <metadata name="CreationDate">2025-10-16</metadata>
+ <metadata name="Description"></metadata>
+ <metadata name="Designer"></metadata>
+ <metadata name="DesignerCover"></metadata>
+ <metadata name="License"></metadata>
+ <metadata name="ModificationDate">2025-10-16</metadata>
+ <metadata name="Origin"></metadata>
+ <metadata name="Title"></metadata>
+ <resources>
+  <object id="2" p:UUID="d54b669a-0470-4579-9ed5-b14c17f13b34" type="model">
+   <components>
+    <component p:path="/3D/Objects/object_1.model" objectid="1" p:UUID="242b55f0-0669-4c80-89c9-09ec4d8b64c2" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>
+   </components>
+  </object>
+  <object id="4" p:UUID="e6cd4ded-d72d-4ad3-9795-10959c1a843c" type="model">
+   <components>
+    <component p:path="/3D/Objects/object_3.model" objectid="3" p:UUID="5830af47-ebd9-4ad9-b6ff-d5472e953be8" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>
+   </components>
+  </object>
+  <object id="6" p:UUID="37158636-d989-4f99-8c26-30f415ebc11e" type="model">
+   <components>
+    <component p:path="/3D/Objects/object_5.model" objectid="5" p:UUID="17684dd0-321f-473d-8214-f310549c7fde" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>
+   </components>
+  </object>
+  <object id="8" p:UUID="3e39c0b4-3826-486f-8702-960a0864fd2a" type="model">
+   <components>
+    <component p:path="/3D/Objects/object_7.model" objectid="7" p:UUID="d8be8a5b-4ab1-4753-87ce-aeb0da76ed3b" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>
+   </components>
+  </object>
+ </resources>
+ <build p:UUID="9c8626d1-7b9e-4823-8327-01ecb1c7d2db">
+  <item objectid="2" p:UUID="6f2f872c-e13a-49aa-be6e-614d8f16907b" transform="1 0 0 0 1 0 0 0 1 100 100 0" printable="1"/>
+  <item objectid="4" p:UUID="eca5ca91-2857-4db4-bdff-7f84251bcd1e" transform="1 0 0 0 1 0 0 0 1 130 100 0" printable="1"/>
+  <item objectid="6" p:UUID="403c18b6-01ae-44fc-b143-325d229d86d4" transform="1 0 0 0 1 0 0 0 1 160 100 0" printable="1"/>
+  <item objectid="8" p:UUID="ecc57ad3-03c2-4162-b85c-22286b97de2c" transform="1 0 0 0 1 0 0 0 1 190 100 0" printable="1"/>
+ </build>
+</model>
