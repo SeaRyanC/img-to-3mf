@@ -24,8 +24,9 @@ export function generateOpenSCADScript(options: OpenSCADOptions): string {
 // Height: ${height}mm
 // Scale: ${scale}mm per pixel in XY, ${height}mm tall
 
-scale([${scale}, ${scale}, ${height}])
-linear_extrude(1)
+linear_extrude(${height})
+offset(-0.1)
+scale([${scale}, ${scale}])
 projection()
 intersection() {
     translate([0, 0, -2])
