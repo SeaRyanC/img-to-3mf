@@ -9,7 +9,7 @@ Convert images to 3MF files for multi-color 3D printing on Bambu Lab printers.
 - Identifies up to 16 most common colors in the image
 - Maps colors to nearest Bambu Lab Basic PLA filaments
 - Generates editable configuration file for customization
-- Supports backplane for better print adhesion
+- Supports three color modalities: default, backing, and sandwich modes
 - Compatible with Bambu Studio
 
 ## Requirements
@@ -74,26 +74,55 @@ Customize the configuration file:
 
 - **`height`**: Extrusion height in millimeters for each color layer
 - **`color`**: Bambu Lab filament name (e.g., "red", "blue", "white", "black")
-- **`backplane`**: (Optional) Add a base layer under all colors
 
-Example with backplane:
+#### Color Modalities
 
+The tool supports three different color modalities:
+
+**1. Default Mode (no options specified)**: All colors go through the entire object
 ```jsonc
 {
   "colors": {
     "#ff0000": {
       "height": 1.2,
       "color": "red"
-    },
-    "#0000ff": {
+    }
+  },
+  "options": {}
+}
+```
+
+**2. Backing Mode**: A backing layer with all other colors on top (measured relative to backing)
+```jsonc
+{
+  "colors": {
+    "#ff0000": {
       "height": 1.2,
-      "color": "blue"
+      "color": "red"
     }
   },
   "options": {
-    "backplane": {
+    "backing": {
       "color": "black",
-      "height": 0.6
+      "thickness": 1.2
+    }
+  }
+}
+```
+
+**3. Sandwich Mode**: Colors embedded within a plane, flush on both front and back
+```jsonc
+{
+  "colors": {
+    "#ff0000": {
+      "height": 1.2,
+      "color": "red"
+    }
+  },
+  "options": {
+    "sandwich": {
+      "color": "black",
+      "thickness": 1.2
     }
   }
 }
@@ -109,7 +138,7 @@ Output:
 ```
 Processing myimage.jpg (309x312)
 Processing image...
-Generating backplane...
+Generating backing layer...
 Generating mesh for color #ff0000 (red)...
 Generating mesh for color #0000ff (blue)...
 Combining meshes into final 3MF...
@@ -151,7 +180,8 @@ The tool automatically maps colors to these Bambu Lab Basic PLA filaments:
 - Use images with stark color differences for best results
 - The tool handles compression artifacts by treating similar colors as identical
 - Background is automatically detected and excluded
-- For better adhesion, add a backplane layer
+- Use backing mode for better adhesion with a base layer
+- Use sandwich mode for a flush print on both sides
 - Adjust heights in the config file to control layer thickness
 
 ## Development

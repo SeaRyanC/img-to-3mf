@@ -8,15 +8,21 @@ export interface ColorConfig {
   color: string; // Bambu filament color name
 }
 
-export interface BackplaneConfig {
+export interface BackingConfig {
   color: string;
-  height: number;
+  thickness: number;
+}
+
+export interface SandwichConfig {
+  color: string;
+  thickness: number;
 }
 
 export interface Config {
   colors: Record<string, ColorConfig>;
   options: {
-    backplane?: BackplaneConfig;
+    backing?: BackingConfig;
+    sandwich?: SandwichConfig;
   };
 }
 
@@ -40,8 +46,37 @@ export function generateDefaultConfig(modalColors: string[]): Config {
 }
 
 export function writeConfig(filepath: string, config: Config): void {
-  const jsonc = JSON.stringify(config, null, 2);
-  fs.writeFileSync(filepath, jsonc, 'utf-8');
+  const jsonContent = JSON.stringify(config, null, 2);
+  
+  // Add comment blocks showing each possibility
+  const commentBlock = `// Color Modality Options:
+//
+// Option 1: Default mode (no options specified)
+// All colors go through the entire object
+//   "options": {}
+//
+// Option 2: Backing mode
+// A backing layer with all other colors on top (measured relative to backing)
+//   "options": {
+//     "backing": {
+//       "color": "black",
+//       "thickness": 1.2
+//     }
+//   }
+//
+// Option 3: Sandwich mode  
+// Colors embedded within a plane, flush on both front and back
+//   "options": {
+//     "sandwich": {
+//       "color": "black",
+//       "thickness": 1.2
+//     }
+//   }
+//
+`;
+  
+  const fullContent = commentBlock + jsonContent;
+  fs.writeFileSync(filepath, fullContent, 'utf-8');
 }
 
 export function readConfig(filepath: string): Config {

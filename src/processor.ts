@@ -38,31 +38,65 @@ export async function processImageTo3MF(
     const coloredObjects: ColoredObject[] = [];
     const debugScadParts: string[] = [];
 
-    // Process backplane if configured
-    if (config.options.backplane) {
-      console.log('Generating backplane...');
-      const backplaneMask = await createBackplaneMask(processedImage);
-      const backplane3mfPath = path.join(tempDir, 'backplane.3mf');
+    // Determine color modality mode
+    const hasBackingMode = config.options.backing !== undefined;
+    const hasSandwichMode = config.options.sandwich !== undefined;
+    
+    if (hasBackingMode && hasSandwichMode) {
+      throw new Error('Cannot specify both "backing" and "sandwich" modes. Choose one or neither.');
+    }
+
+    // Process backing layer if in backing mode
+    if (hasBackingMode) {
+      console.log('Generating backing layer...');
+      const backingMask = await createBackplaneMask(processedImage);
+      const backing3mfPath = path.join(tempDir, 'backing.3mf');
 
       await createMeshWithOpenSCAD(
-        backplaneMask,
-        config.options.backplane.height,
-        backplane3mfPath,
+        backingMask,
+        config.options.backing!.thickness,
+        backing3mfPath,
         tempDir
       );
 
-      const backplaneMesh = await parse3MF(backplane3mfPath);
-      const backplaneRgb = hexToRgb('#000000'); // Default to black if color mapping fails
+      const backingMesh = await parse3MF(backing3mfPath);
 
       coloredObjects.push({
-        mesh: backplaneMesh,
+        mesh: backingMesh,
         color: '#000000',
-        filamentName: config.options.backplane.color,
+        filamentName: config.options.backing!.color,
       });
 
-      debugScadParts.push(`// Backplane (${config.options.backplane.color})
+      debugScadParts.push(`// Backing layer (${config.options.backing!.color})
 color([0, 0, 0]) translate([0, 0, 0])
-  surface(file = "backplane_mask.png", center = false, invert = true);
+  surface(file = "backing_mask.png", center = false, invert = true);
+`);
+    }
+
+    // Process sandwich layer if in sandwich mode
+    if (hasSandwichMode) {
+      console.log('Generating sandwich layer...');
+      const sandwichMask = await createBackplaneMask(processedImage);
+      const sandwich3mfPath = path.join(tempDir, 'sandwich.3mf');
+
+      await createMeshWithOpenSCAD(
+        sandwichMask,
+        config.options.sandwich!.thickness,
+        sandwich3mfPath,
+        tempDir
+      );
+
+      const sandwichMesh = await parse3MF(sandwich3mfPath);
+
+      coloredObjects.push({
+        mesh: sandwichMesh,
+        color: '#000000',
+        filamentName: config.options.sandwich!.color,
+      });
+
+      debugScadParts.push(`// Sandwich layer (${config.options.sandwich!.color})
+color([0, 0, 0]) translate([0, 0, 0])
+  surface(file = "sandwich_mask.png", center = false, invert = true);
 `);
     }
 
@@ -75,13 +109,39 @@ color([0, 0, 0]) translate([0, 0, 0])
       // Create color mask, excluding pixels already used by previous colors
       const mask = await createColorMask(processedImage, hexColor, usedPixels);
 
+      // Calculate z-offset and height based on mode
+      let zOffset = 0;
+      let colorHeight = colorConfig.height;
+      
+      if (hasBackingMode) {
+        // In backing mode, colors sit on top of the backing
+        zOffset = config.options.backing!.thickness;
+      } else if (hasSandwichMode) {
+        // In sandwich mode, colors are embedded within the sandwich thickness
+        // Colors should not exceed sandwich thickness
+        const sandwichThickness = config.options.sandwich!.thickness;
+        if (colorConfig.height > sandwichThickness) {
+          console.warn(`Warning: Color ${hexColor} height (${colorConfig.height}mm) exceeds sandwich thickness (${sandwichThickness}mm). Clamping to sandwich thickness.`);
+          colorHeight = sandwichThickness;
+        }
+        zOffset = 0;
+      }
+      
       // Generate 3MF for this color using OpenSCAD
       const color3mfPath = path.join(tempDir, `color_${hexColor.replace('#', '')}.3mf`);
 
-      await createMeshWithOpenSCAD(mask, colorConfig.height, color3mfPath, tempDir);
+      await createMeshWithOpenSCAD(mask, colorHeight, color3mfPath, tempDir);
 
-      // Parse the generated 3MF
+      // Parse the generated 3MF and adjust z-offset if needed
       const mesh = await parse3MF(color3mfPath);
+      
+      // Apply z-offset to mesh vertices if in backing mode
+      if (hasBackingMode && zOffset !== 0) {
+        // Offset all vertices by the backing thickness
+        for (const vertex of mesh.vertices) {
+          vertex.z += zOffset;
+        }
+      }
 
       coloredObjects.push({
         mesh,
@@ -91,7 +151,6 @@ color([0, 0, 0]) translate([0, 0, 0])
 
       // Add to debug SCAD
       const rgb = hexToRgb(hexColor);
-      const zOffset = config.options.backplane ? config.options.backplane.height : 0;
       debugScadParts.push(`// ${colorConfig.color} (${hexColor})
 color([${rgb.r / 255}, ${rgb.g / 255}, ${rgb.b / 255}]) translate([0, 0, ${zOffset}])
   surface(file = "color_${hexColor.replace('#', '')}_mask.png", center = false, invert = true);
